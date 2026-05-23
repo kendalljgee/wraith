@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from swarm import make_battle, tick, serialize_state, DT
 import asyncio
 import os
 from dotenv import load_dotenv
@@ -35,18 +36,37 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+active_battles: dict[str, tuple] = {}
 
 @app.get("/health")
 async def health():
     return {"status": "operational", "system": "WRAITH"}
 
+@app.post("/api/battle/start")
+async def start_battle(n_drones: int = 30):
+    state, strategy = make_battle(n_drones=n_drones)
+    active_battles[state.session_id] = (state, strategy)
+    return {"session_id": state.session_id}
+
 @app.websocket("/ws/battle/{session_id}")
 async def battle_ws(ws: WebSocket, session_id: str):
     await manager.connect(ws, session_id)
+
+    if session_id not in active_battles:
+        state, strategy = make_battle(session_id=session_id)
+        active_battles[session_id] = (state, strategy)
+
     try:
         while True:
-            # Swarm engine plugs in here Week 1 Day 3
-            await manager.broadcast(session_id, {"type": "ping"})
-            await asyncio.sleep(1/30)
+            state, strategy = active_battles[session_id]
+
+            if not state.terminal:
+                state = tick(state, strategy)
+                active_battles[session_id] = (state, strategy)
+
+            await manager.broadcast(session_id, serialize_state(state))
+            await asyncio.sleep(DT)
+
     except WebSocketDisconnect:
         manager.disconnect(ws, session_id)
+        active_battles.pop(session_id, None)
