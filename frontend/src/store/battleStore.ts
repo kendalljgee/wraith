@@ -51,6 +51,8 @@ interface BattleState {
   setDefenseAssets: (assets: DefenseAsset[]) => void
   setDefenseUpgrades: (upgrades: DefenseUpgrades) => void
   addDefenseAsset: (asset: DefenseAsset) => void
+  moveDefenseAsset: (id: string, x: number, y: number) => void
+  incrementDefenseUpgrade: (upgrade: DefenseUpgrade) => void
   addGeneration: (gen: Generation) => void
   setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
   setSession: (id: string) => void
@@ -73,6 +75,17 @@ export const useStore = create<BattleState>((set) => ({
   updateDrones: (drones) => set({ drones }),
   setDefenseAssets: (defenseAssets) => set({ defenseAssets }),
   setDefenseUpgrades: (defenseUpgrades) => set({ defenseUpgrades }),
+  moveDefenseAsset: (id, x, y) => set((s) => ({
+    defenseAssets: s.defenseAssets.map((asset) => (
+      asset.id === id ? { ...asset, x, y } : asset
+    )),
+  })),
+  incrementDefenseUpgrade: (upgrade) => set((s) => ({
+    defenseUpgrades: {
+      ...s.defenseUpgrades,
+      [upgrade]: Math.min(3, s.defenseUpgrades[upgrade] + 1),
+    },
+  })),
   addGeneration: (gen) => set((s) => ({
     generations: [...s.generations.slice(-50), gen] // keep last 50
   })),

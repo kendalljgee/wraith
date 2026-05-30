@@ -187,8 +187,9 @@ def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> 
         return None
 
     upgrade_state = upgrades or {}
+    asset_id = str(payload.get("id") or f"manual_{asset_type}_{int(x)}_{int(y)}")
     return DefenseAsset(
-        id=f"manual_{asset_type}_{int(x)}_{int(y)}",
+        id=asset_id,
         x=x,
         y=y,
         asset_type=asset_type,
@@ -213,6 +214,21 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
         state.defense_assets.append(asset)
         active_battles[session_id] = (state, strategy)
         return
+
+    if message_type == "move_defense_asset":
+        asset_id = message.get("id")
+        try:
+            x = clamp(float(message.get("x")), 0.0, WIDTH)
+            y = clamp(float(message.get("y")), 0.0, HEIGHT)
+        except (TypeError, ValueError):
+            return
+
+        for asset in state.defense_assets:
+            if asset.id == asset_id:
+                asset.x = x
+                asset.y = y
+                active_battles[session_id] = (state, strategy)
+                return
 
     if message_type == "upgrade_defense":
         upgrade = message.get("upgrade")

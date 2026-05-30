@@ -1,21 +1,38 @@
 import { useEffect, useRef } from 'react'
 import * as PIXI from 'pixi.js'
 import { useStore } from '../store/battleStore'
-import type { DefenseAssetType, Drone } from '../store/battleStore'
+import type { DefenseAsset, DefenseAssetType, Drone } from '../store/battleStore'
 
 const WIDTH = 800
 const HEIGHT = 600
+const CENTER_GRAB_RADIUS = 12
+
+const ASSET_COLORS: Record<DefenseAssetType, number> = {
+  jammer: 0xf59e0b,
+  interceptor: 0xef4444,
+  spoofer: 0xa855f7,
+}
+
+const ASSET_RADII: Record<DefenseAssetType, number> = {
+  jammer: 110,
+  interceptor: 60,
+  spoofer: 110,
+}
 
 interface BattleCanvasProps {
   mode?: 'challenge' | 'spectator' | 'edit'
-  onPlaceAsset?: (asset: { x: number; y: number; type?: DefenseAssetType }) => void
+  onPlaceAsset?: (asset: { id: string; x: number; y: number; type: DefenseAssetType }) => void
+  onMoveAsset?: (asset: { id: string; x: number; y: number }) => void
   selectedAsset?: DefenseAssetType
+  previewRadius?: number
 }
 
 export default function BattleCanvas({
   mode = 'spectator',
   onPlaceAsset,
-  selectedAsset,
+  onMoveAsset,
+  selectedAsset = 'jammer',
+  previewRadius,
 }: BattleCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<PIXI.Application | null>(null)
@@ -23,40 +40,87 @@ export default function BattleCanvas({
   const commsLayer = useRef<PIXI.Graphics | null>(null)
   const defenseLayer = useRef<PIXI.Graphics | null>(null)
 
-  // refs to avoid stale closures in the Pixi event handler
-  const modeRef = useRef<string>(mode)
+  const modeRef = useRef(mode)
   const onPlaceAssetRef = useRef<typeof onPlaceAsset | null>(onPlaceAsset || null)
-  const selectedAssetRef = useRef<DefenseAssetType | undefined>(selectedAsset)
-  const pointerHandlerRef = useRef<((event: PIXI.FederatedPointerEvent) => void) | null>(null)
+  const onMoveAssetRef = useRef<typeof onMoveAsset | null>(onMoveAsset || null)
+  const selectedAssetRef = useRef<DefenseAssetType>(selectedAsset)
+  const previewRadiusRef = useRef(previewRadius || ASSET_RADII[selectedAsset])
+  const defenseAssetsRef = useRef<DefenseAsset[]>([])
+  const pointerHandlersRef = useRef<{
+    down: (event: PIXI.FederatedPointerEvent) => void
+    move: (event: PIXI.FederatedPointerEvent) => void
+    up: () => void
+    out: () => void
+  } | null>(null)
+  const previewRef = useRef<{ x: number; y: number } | null>(null)
+  const draggingRef = useRef<string | null>(null)
 
   const drones = useStore(s => s.drones)
   const defenseAssets = useStore(s => s.defenseAssets)
 
-  // keep refs up-to-date
+  function drawDefenseLayer() {
+    const dLayer = defenseLayer.current
+    if (!dLayer) return
+
+    dLayer.clear()
+    defenseAssetsRef.current.forEach((asset) => {
+      if (!asset.active) return
+      drawAsset(dLayer, asset.x, asset.y, asset.radius, ASSET_COLORS[asset.type], 0.3, 0.8)
+    })
+
+    if (modeRef.current === 'challenge' && previewRef.current) {
+      const color = ASSET_COLORS[selectedAssetRef.current]
+      drawAsset(
+        dLayer,
+        previewRef.current.x,
+        previewRef.current.y,
+        previewRadiusRef.current,
+        color,
+        0.55,
+        0.35,
+        true,
+      )
+    }
+  }
+
+  function findAssetCenterHit(x: number, y: number) {
+    return defenseAssetsRef.current.find(asset => {
+      if (!asset.active) return false
+      const dx = asset.x - x
+      const dy = asset.y - y
+      return Math.sqrt(dx * dx + dy * dy) <= CENTER_GRAB_RADIUS
+    })
+  }
+
   useEffect(() => {
     modeRef.current = mode
     onPlaceAssetRef.current = onPlaceAsset || null
+    onMoveAssetRef.current = onMoveAsset || null
     selectedAssetRef.current = selectedAsset
-  }, [mode, onPlaceAsset, selectedAsset])
+    previewRadiusRef.current = previewRadius || ASSET_RADII[selectedAsset]
+    drawDefenseLayer()
+  }, [mode, onPlaceAsset, onMoveAsset, selectedAsset, previewRadius])
 
-  // Initialize PixiJS once
+  useEffect(() => {
+    defenseAssetsRef.current = defenseAssets
+    drawDefenseLayer()
+  }, [defenseAssets])
+
   useEffect(() => {
     if (!canvasRef.current || appRef.current) return
 
     const app = new PIXI.Application()
     const sprites = droneSprites.current
-    // Initialize the renderer — app.canvas becomes available after init() completes
+
     app.init({
       width: WIDTH,
       height: HEIGHT,
       backgroundColor: 0x080c10,
       antialias: true,
     }).then(() => {
-      // Use app.canvas (preferred) rather than deprecated app.view
       canvasRef.current!.appendChild(app.canvas as HTMLCanvasElement)
       appRef.current = app
 
-      // Layer order: defense → comms → drones
       const dLayer = new PIXI.Graphics()
       const cLayer = new PIXI.Graphics()
       app.stage.addChild(dLayer)
@@ -64,7 +128,6 @@ export default function BattleCanvas({
       defenseLayer.current = dLayer
       commsLayer.current = cLayer
 
-      // Grid overlay for ops-center feel
       const grid = new PIXI.Graphics()
       for (let x = 0; x <= WIDTH; x += 80) {
         grid.moveTo(x, 0).lineTo(x, HEIGHT)
@@ -75,7 +138,6 @@ export default function BattleCanvas({
       grid.stroke({ color: 0x1e2d3d, width: 0.5, alpha: 0.5 })
       app.stage.addChildAt(grid, 0)
 
-      // Objective marker — bottom center
       const obj = new PIXI.Graphics()
       obj.circle(400, 520, 20)
       obj.stroke({ color: 0xef4444, width: 1.5, alpha: 0.8 })
@@ -84,48 +146,97 @@ export default function BattleCanvas({
       obj.stroke({ color: 0xef4444, width: 1, alpha: 0.6 })
       app.stage.addChild(obj)
 
-      // Add onClick handler to the PixiJS canvas.
-      // Use eventMode static so stage receives pointer events.
       app.stage.eventMode = 'static'
+      app.stage.hitArea = new PIXI.Rectangle(0, 0, WIDTH, HEIGHT)
+
       const pointerDownHandler = (e: PIXI.FederatedPointerEvent) => {
-        const pos = e.global
-        if (!pos) return
-        // Only call when in challenge mode
         if (modeRef.current !== 'challenge') return
-        onPlaceAssetRef.current?.({ x: pos.x, y: pos.y, type: selectedAssetRef.current })
+        const pos = clampPoint(e.global.x, e.global.y)
+        const hitAsset = findAssetCenterHit(pos.x, pos.y)
+
+        if (hitAsset) {
+          draggingRef.current = hitAsset.id
+          previewRef.current = null
+          drawDefenseLayer()
+          return
+        }
+
+        const type = selectedAssetRef.current
+        const id = `manual_${type}_${Date.now()}`
+        onPlaceAssetRef.current?.({ id, x: pos.x, y: pos.y, type })
       }
-      pointerHandlerRef.current = pointerDownHandler
+
+      const pointerMoveHandler = (e: PIXI.FederatedPointerEvent) => {
+        if (modeRef.current !== 'challenge') {
+          previewRef.current = null
+          drawDefenseLayer()
+          return
+        }
+
+        const pos = clampPoint(e.global.x, e.global.y)
+        if (draggingRef.current) {
+          onMoveAssetRef.current?.({ id: draggingRef.current, x: pos.x, y: pos.y })
+          return
+        }
+
+        previewRef.current = pos
+        drawDefenseLayer()
+      }
+
+      const pointerUpHandler = () => {
+        draggingRef.current = null
+      }
+
+      const pointerOutHandler = () => {
+        if (!draggingRef.current) {
+          previewRef.current = null
+          drawDefenseLayer()
+        }
+      }
+
+      pointerHandlersRef.current = {
+        down: pointerDownHandler,
+        move: pointerMoveHandler,
+        up: pointerUpHandler,
+        out: pointerOutHandler,
+      }
       app.stage.on('pointerdown', pointerDownHandler)
+      app.stage.on('pointermove', pointerMoveHandler)
+      app.stage.on('pointerup', pointerUpHandler)
+      app.stage.on('pointerupoutside', pointerUpHandler)
+      app.stage.on('pointerout', pointerOutHandler)
     })
 
     return () => {
-      // Remove pointer handler if present
-      if (pointerHandlerRef.current) app.stage.off('pointerdown', pointerHandlerRef.current)
-      pointerHandlerRef.current = null
+      const handlers = pointerHandlersRef.current
+      if (handlers) {
+        app.stage.off('pointerdown', handlers.down)
+        app.stage.off('pointermove', handlers.move)
+        app.stage.off('pointerup', handlers.up)
+        app.stage.off('pointerupoutside', handlers.up)
+        app.stage.off('pointerout', handlers.out)
+      }
+      pointerHandlersRef.current = null
       app.destroy(true)
       appRef.current = null
       sprites.clear()
     }
   }, [])
 
-  // Update sprites whenever drone state changes
   useEffect(() => {
     const app = appRef.current
     if (!app || !commsLayer.current) return
 
     const stage = app.stage
 
-    // ── drone sprites ──────────────────────────────────────
     drones.forEach(drone => {
       if (!droneSprites.current.has(drone.id)) {
         const container = new PIXI.Container()
 
-        // Triangle body
         const g = new PIXI.Graphics()
         drawDroneShape(g, drone)
         container.addChild(g)
 
-        // Status dot (jammed/spoofed indicator)
         const dot = new PIXI.Graphics()
         container.addChild(dot)
 
@@ -137,30 +248,26 @@ export default function BattleCanvas({
       const body = container.children[0] as PIXI.Graphics
       const dot = container.children[1] as PIXI.Graphics
 
-      // Position + rotation
       container.x = drone.x
       container.y = drone.y
       container.rotation = Math.atan2(drone.vy, drone.vx) + Math.PI / 2
       container.alpha = drone.alive ? 1 : 0
 
-      // Redraw on state change
       body.clear()
       drawDroneShape(body, drone)
 
-      // Status indicator dot
       dot.clear()
       if (drone.alive) {
         if (drone.jammed) {
           dot.circle(0, -10, 3)
-          dot.fill({ color: 0xf59e0b })   // amber = jammed
+          dot.fill({ color: 0xf59e0b })
         } else if (drone.spoofed) {
           dot.circle(0, -10, 3)
-          dot.fill({ color: 0xa855f7 })   // purple = spoofed
+          dot.fill({ color: 0xa855f7 })
         }
       }
     })
 
-    // Remove sprites for drones no longer in state
     droneSprites.current.forEach((sprite, id) => {
       if (!drones.find(d => d.id === id)) {
         stage.removeChild(sprite)
@@ -169,15 +276,13 @@ export default function BattleCanvas({
       }
     })
 
-    // ── comms lines ────────────────────────────────────────
-    const cLayer = commsLayer.current!
+    const cLayer = commsLayer.current
     cLayer.clear()
     drones.forEach(drone => {
       if (!drone.alive || drone.jammed) return
       drone.comms_links.forEach(linkedId => {
         const target = drones.find(d => d.id === linkedId)
         if (!target || !target.alive) return
-        // Only draw each link once
         if (drone.id < linkedId) {
           cLayer.moveTo(drone.x, drone.y)
           cLayer.lineTo(target.x, target.y)
@@ -185,25 +290,7 @@ export default function BattleCanvas({
       })
     })
     cLayer.stroke({ color: 0x00ff88, width: 0.5, alpha: 0.2 })
-
-    // ── defense asset rings ─────────────────────────────────
-    const dLayer = defenseLayer.current
-    if (dLayer) {
-      dLayer.clear()
-      defenseAssets.forEach((asset) => {
-        if (!asset.active) return
-        const color = asset.type === 'jammer'      ? 0xf59e0b
-                    : asset.type === 'interceptor' ? 0xef4444
-                    : 0xa855f7                       // spoofer
-
-        dLayer.circle(asset.x, asset.y, asset.radius)
-        dLayer.stroke({ color, width: 1, alpha: 0.3 })
-        dLayer.circle(asset.x, asset.y, 5)
-        dLayer.fill({ color, alpha: 0.8 })
-      })
-    }
-
-  }, [drones, defenseAssets])
+  }, [drones])
 
   return (
     <div
@@ -214,17 +301,37 @@ export default function BattleCanvas({
   )
 }
 
-// ── helpers ────────────────────────────────────────────────
+function clampPoint(x: number, y: number) {
+  return {
+    x: Math.max(0, Math.min(WIDTH, x)),
+    y: Math.max(0, Math.min(HEIGHT, y)),
+  }
+}
+
+function drawAsset(
+  g: PIXI.Graphics,
+  x: number,
+  y: number,
+  radius: number,
+  color: number,
+  ringAlpha: number,
+  centerAlpha: number,
+  preview = false,
+) {
+  g.circle(x, y, radius)
+  g.stroke({ color, width: preview ? 1.5 : 1, alpha: ringAlpha })
+  g.circle(x, y, preview ? 7 : 5)
+  g.fill({ color, alpha: centerAlpha })
+}
 
 function drawDroneShape(g: PIXI.Graphics, drone: Drone) {
   if (!drone.alive) return
 
-  const color = drone.jammed  ? 0xf59e0b   // amber = jammed
-              : drone.spoofed ? 0xa855f7   // purple = spoofed
-              : drone.team === 'red' ? 0xff4444  // red = attacker
-              : 0x4a9eff                    // blue = defender
+  const color = drone.jammed ? 0xf59e0b
+    : drone.spoofed ? 0xa855f7
+    : drone.team === 'red' ? 0xff4444
+    : 0x4a9eff
 
-  // Triangle pointing up (rotation handles direction)
   g.poly([0, -7, 5, 5, -5, 5])
   g.fill({ color, alpha: 0.9 })
   g.poly([0, -7, 5, 5, -5, 5])

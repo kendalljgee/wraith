@@ -36,23 +36,37 @@ export default function App() {
     defenseAssets,
     defenseUpgrades,
     addDefenseAsset,
+    moveDefenseAsset,
+    incrementDefenseUpgrade,
   } = useStore()
-  const { placeDefenseAsset, upgradeDefense } = useBattleSocket(SESSION_ID)
+  const { placeDefenseAsset, moveDefenseAsset: sendMoveDefenseAsset, upgradeDefense } = useBattleSocket(SESSION_ID)
 
   const alive = drones.filter(d => d.alive).length
   const disabled = drones.length - alive
   const total = drones.length
   const [challengeActive, setChallengeActive] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
+  const [paused, setPaused] = useState(false)
+
+  const selectedTool = ASSET_TOOLS.find(tool => tool.type === selectedAsset)!
+  const selectedRadius = getAssetRadius(selectedAsset, selectedTool.radius, defenseUpgrades)
 
   async function enterChallenge() {
     setChallengeActive(true)
+    setPaused(true)
     await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
   }
 
   async function runDefense() {
     setChallengeActive(false)
+    setPaused(false)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
+  }
+
+  async function togglePause() {
+    const nextPaused = !paused
+    setPaused(nextPaused)
+    await fetch(`${API_URL}/api/battle/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
   }
 
   return (
@@ -66,6 +80,13 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={togglePause}
+            className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 hover:border-slate-500 transition-colors"
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
+
           {challengeActive ? (
             <button
               onClick={runDefense}
@@ -146,7 +167,10 @@ export default function App() {
             {UPGRADE_TOOLS.map(upgrade => (
               <button
                 key={upgrade.key}
-                onClick={() => upgradeDefense({ upgrade: upgrade.key })}
+                onClick={() => {
+                  incrementDefenseUpgrade(upgrade.key)
+                  upgradeDefense({ upgrade: upgrade.key })
+                }}
                 disabled={defenseUpgrades[upgrade.key] >= 3}
                 className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 disabled:opacity-40 disabled:hover:text-slate-400 transition-colors"
               >
@@ -162,31 +186,34 @@ export default function App() {
           <BattleCanvas
             mode={challengeActive ? 'challenge' : 'spectator'}
             selectedAsset={selectedAsset}
+            previewRadius={selectedRadius}
             onPlaceAsset={(asset) => {
-              const type = asset.type || selectedAsset
-              const tool = ASSET_TOOLS.find(item => item.type === type)!
-
               placeDefenseAsset({
-                asset_type: type,
+                id: asset.id,
+                asset_type: asset.type,
                 x: asset.x,
                 y: asset.y,
               })
 
               addDefenseAsset({
-                id: `manual_${Date.now()}`,
+                id: asset.id,
                 x: asset.x,
                 y: asset.y,
-                type,
-                radius: tool.radius,
+                type: asset.type,
+                radius: selectedRadius,
                 active: true,
               })
             }}
+            onMoveAsset={(asset) => {
+              moveDefenseAsset(asset.id, asset.x, asset.y)
+              sendMoveDefenseAsset(asset)
+            }}
           />
           <div className="flex gap-6 mt-3 text-xs text-slate-500">
-            <span><span className="text-red-400">A</span> Drone</span>
-            <span><span className="text-amber-400">J</span> Jammed</span>
-            <span><span className="text-purple-400">S</span> Spoofed</span>
-            <span><span className="text-emerald-400">-</span> Link</span>
+            <span><span className="text-red-400">▲</span> Attacker Drone</span>
+            <span><span className="text-amber-400">▲</span> Jammed</span>
+            <span><span className="text-purple-400">▲</span> Spoofed</span>
+            <span><span className="text-emerald-400">—</span> Comms Link</span>
           </div>
         </div>
 
@@ -196,4 +223,17 @@ export default function App() {
       </div>
     </div>
   )
+}
+
+function getAssetRadius(
+  type: DefenseAssetType,
+  baseRadius: number,
+  upgrades: Record<DefenseUpgrade, number>,
+) {
+  let radius = baseRadius
+  if (type === 'jammer' || type === 'spoofer') {
+    radius *= 1 + upgrades.ew_range * 0.15
+  }
+  radius *= 1 + upgrades.sensor_fusion * 0.08
+  return Math.round(radius * 10) / 10
 }

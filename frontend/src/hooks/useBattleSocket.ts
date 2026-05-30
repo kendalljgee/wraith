@@ -32,7 +32,15 @@ type BattleMessage = StateMessage | GenerationMessage | HydrateMessage
 
 type PlaceDefenseAssetCommand = {
   type: 'place_defense_asset'
+  id: string
   asset_type: DefenseAssetType
+  x: number
+  y: number
+}
+
+type MoveDefenseAssetCommand = {
+  type: 'move_defense_asset'
+  id: string
   x: number
   y: number
 }
@@ -118,6 +126,11 @@ export function useBattleSocket(sessionId: string) {
     placeDefenseAsset: (asset: Omit<PlaceDefenseAssetCommand, 'type'>) => {
       if (ws.current?.readyState !== WebSocket.OPEN) return false
       ws.current.send(JSON.stringify({ type: 'place_defense_asset', ...asset }))
+      return true
+    },
+    moveDefenseAsset: (asset: Omit<MoveDefenseAssetCommand, 'type'>) => {
+      if (ws.current?.readyState !== WebSocket.OPEN) return false
+      ws.current.send(JSON.stringify({ type: 'move_defense_asset', ...asset }))
       return true
     },
     upgradeDefense: (upgrade: Omit<UpgradeDefenseCommand, 'type'>) => {
