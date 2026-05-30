@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as PIXI from 'pixi.js'
 import { useStore } from '../store/battleStore'
-import type { DefenseAsset, DefenseAssetType, Drone } from '../store/battleStore'
+import type { DefenseAsset, DefenseAssetType, Drone, TerrainZone } from '../store/battleStore'
 
 const WIDTH = 800
 const HEIGHT = 600
@@ -23,29 +23,37 @@ interface BattleCanvasProps {
   mode?: 'challenge' | 'spectator' | 'edit'
   onPlaceAsset?: (asset: { id: string; x: number; y: number; type: DefenseAssetType }) => void
   onMoveAsset?: (asset: { id: string; x: number; y: number }) => void
+  onRemoveAsset?: (asset: { id: string }) => void
   selectedAsset?: DefenseAssetType
   previewRadius?: number
+  removeMode?: boolean
 }
 
 export default function BattleCanvas({
   mode = 'spectator',
   onPlaceAsset,
   onMoveAsset,
+  onRemoveAsset,
   selectedAsset = 'jammer',
   previewRadius,
+  removeMode = false,
 }: BattleCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<PIXI.Application | null>(null)
   const droneSprites = useRef<Map<string, PIXI.Container>>(new Map())
   const commsLayer = useRef<PIXI.Graphics | null>(null)
   const defenseLayer = useRef<PIXI.Graphics | null>(null)
+  const terrainLayer = useRef<PIXI.Graphics | null>(null)
 
   const modeRef = useRef(mode)
   const onPlaceAssetRef = useRef<typeof onPlaceAsset | null>(onPlaceAsset || null)
   const onMoveAssetRef = useRef<typeof onMoveAsset | null>(onMoveAsset || null)
+  const onRemoveAssetRef = useRef<typeof onRemoveAsset | null>(onRemoveAsset || null)
   const selectedAssetRef = useRef<DefenseAssetType>(selectedAsset)
   const previewRadiusRef = useRef(previewRadius || ASSET_RADII[selectedAsset])
   const defenseAssetsRef = useRef<DefenseAsset[]>([])
+  const terrainZonesRef = useRef<TerrainZone[]>([])
+  const removeModeRef = useRef(removeMode)
   const pointerHandlersRef = useRef<{
     down: (event: PIXI.FederatedPointerEvent) => void
     move: (event: PIXI.FederatedPointerEvent) => void
@@ -57,6 +65,7 @@ export default function BattleCanvas({
 
   const drones = useStore(s => s.drones)
   const defenseAssets = useStore(s => s.defenseAssets)
+  const terrainZones = useStore(s => s.terrainZones)
 
   function drawDefenseLayer() {
     const dLayer = defenseLayer.current
@@ -83,6 +92,21 @@ export default function BattleCanvas({
     }
   }
 
+  function drawTerrainLayer() {
+    const layer = terrainLayer.current
+    if (!layer) return
+    layer.clear()
+    terrainZonesRef.current.forEach((zone) => {
+      const color = zone.type === 'urban' ? 0x64748b
+        : zone.type === 'ridge' ? 0x8b5e34
+        : 0x38bdf8
+      layer.rect(zone.x, zone.y, zone.width, zone.height)
+      layer.fill({ color, alpha: 0.13 })
+      layer.rect(zone.x, zone.y, zone.width, zone.height)
+      layer.stroke({ color, width: 1, alpha: 0.35 })
+    })
+  }
+
   function findAssetCenterHit(x: number, y: number) {
     return defenseAssetsRef.current.find(asset => {
       if (!asset.active) return false
@@ -96,15 +120,22 @@ export default function BattleCanvas({
     modeRef.current = mode
     onPlaceAssetRef.current = onPlaceAsset || null
     onMoveAssetRef.current = onMoveAsset || null
+    onRemoveAssetRef.current = onRemoveAsset || null
     selectedAssetRef.current = selectedAsset
     previewRadiusRef.current = previewRadius || ASSET_RADII[selectedAsset]
+    removeModeRef.current = removeMode
     drawDefenseLayer()
-  }, [mode, onPlaceAsset, onMoveAsset, selectedAsset, previewRadius])
+  }, [mode, onPlaceAsset, onMoveAsset, onRemoveAsset, selectedAsset, previewRadius, removeMode])
 
   useEffect(() => {
     defenseAssetsRef.current = defenseAssets
     drawDefenseLayer()
   }, [defenseAssets])
+
+  useEffect(() => {
+    terrainZonesRef.current = terrainZones
+    drawTerrainLayer()
+  }, [terrainZones])
 
   useEffect(() => {
     if (!canvasRef.current || appRef.current) return
@@ -123,8 +154,11 @@ export default function BattleCanvas({
 
       const dLayer = new PIXI.Graphics()
       const cLayer = new PIXI.Graphics()
+      const tLayer = new PIXI.Graphics()
+      app.stage.addChild(tLayer)
       app.stage.addChild(dLayer)
       app.stage.addChild(cLayer)
+      terrainLayer.current = tLayer
       defenseLayer.current = dLayer
       commsLayer.current = cLayer
 
@@ -155,15 +189,21 @@ export default function BattleCanvas({
         const hitAsset = findAssetCenterHit(pos.x, pos.y)
 
         if (hitAsset) {
+          if (removeModeRef.current) {
+            onRemoveAssetRef.current?.({ id: hitAsset.id })
+            return
+          }
           draggingRef.current = hitAsset.id
           previewRef.current = null
           drawDefenseLayer()
           return
         }
 
-        const type = selectedAssetRef.current
-        const id = `manual_${type}_${Date.now()}`
-        onPlaceAssetRef.current?.({ id, x: pos.x, y: pos.y, type })
+        if (!removeModeRef.current) {
+          const type = selectedAssetRef.current
+          const id = `manual_${type}_${Date.now()}`
+          onPlaceAssetRef.current?.({ id, x: pos.x, y: pos.y, type })
+        }
       }
 
       const pointerMoveHandler = (e: PIXI.FederatedPointerEvent) => {
@@ -179,7 +219,7 @@ export default function BattleCanvas({
           return
         }
 
-        previewRef.current = pos
+        previewRef.current = removeModeRef.current ? null : pos
         drawDefenseLayer()
       }
 

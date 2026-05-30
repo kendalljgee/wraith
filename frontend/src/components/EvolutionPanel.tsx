@@ -31,7 +31,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
           </div>
         </div>
         <div className="text-xs text-slate-600 uppercase tracking-widest">
-          {challengeActive ? 'Defense Planning' : generations.length === 0 ? 'Initializing...' : 'Running'}
+          {challengeActive ? 'Add Assets' : generations.length === 0 ? 'Initializing...' : 'Running'}
         </div>
       </div>
 

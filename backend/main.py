@@ -1,7 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from swarm import DefenseAsset, HEIGHT, WIDTH, make_battle, tick, serialize_state, DT
+from swarm import DefenseAsset, HEIGHT, TerrainZone, WIDTH, make_battle, tick, serialize_state, DT
 from tournament import tournament
 from ai_client import complete
 import asyncio
@@ -105,6 +105,19 @@ ASSET_RADII = {
     "spoofer": 110.0,
 }
 MAX_UPGRADE_LEVEL = 3
+TERRAIN_PRESETS = {
+    "clear": [],
+    "urban": [
+        TerrainZone("urban_core", 260.0, 210.0, 280.0, 180.0, "urban", "Urban clutter"),
+    ],
+    "ridge": [
+        TerrainZone("ridge_line", 120.0, 260.0, 560.0, 70.0, "ridge", "Ridgeline mask"),
+    ],
+    "rf_shadow": [
+        TerrainZone("rf_shadow_north", 180.0, 120.0, 180.0, 220.0, "rf_shadow", "RF shadow"),
+        TerrainZone("rf_shadow_south", 500.0, 300.0, 160.0, 180.0, "rf_shadow", "RF shadow"),
+    ],
+}
 
 # ── routes ─────────────────────────────────────────────────
 
@@ -163,6 +176,18 @@ def asset_radius(asset_type: str, upgrades: dict[str, int]) -> float:
     return round(radius, 1)
 
 
+def payload_radius(payload: dict, asset_type: str, upgrades: dict[str, int]) -> float:
+    try:
+        radius = float(payload.get("radius"))
+    except (TypeError, ValueError):
+        return asset_radius(asset_type, upgrades)
+
+    if asset_type in {"jammer", "spoofer"}:
+        radius *= 1 + upgrades.get("ew_range", 0) * 0.15
+    radius *= 1 + upgrades.get("sensor_fusion", 0) * 0.08
+    return round(clamp(radius, 20.0, 320.0), 1)
+
+
 def interceptor_reload(upgrades: dict[str, int]) -> float:
     return max(0.75, round(2.0 - upgrades.get("interceptor_readiness", 0) * 0.35, 2))
 
@@ -188,13 +213,20 @@ def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> 
 
     upgrade_state = upgrades or {}
     asset_id = str(payload.get("id") or f"manual_{asset_type}_{int(x)}_{int(y)}")
+    name = str(payload.get("name") or asset_type.title())
+    try:
+        reload_time = float(payload.get("reload_time"))
+    except (TypeError, ValueError):
+        reload_time = interceptor_reload(upgrade_state)
+
     return DefenseAsset(
         id=asset_id,
+        name=name,
         x=x,
         y=y,
         asset_type=asset_type,
-        radius=asset_radius(asset_type, upgrade_state),
-        reload_time=interceptor_reload(upgrade_state),
+        radius=payload_radius(payload, asset_type, upgrade_state),
+        reload_time=max(0.25, min(10.0, reload_time)),
     )
 
 
@@ -229,6 +261,34 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
                 asset.y = y
                 active_battles[session_id] = (state, strategy)
                 return
+
+    if message_type == "remove_defense_asset":
+        asset_id = message.get("id")
+        state.defense_assets = [
+            asset for asset in state.defense_assets
+            if asset.id != asset_id
+        ]
+        active_battles[session_id] = (state, strategy)
+        return
+
+    if message_type == "set_terrain_preset":
+        preset = message.get("preset")
+        if preset not in TERRAIN_PRESETS:
+            return
+        state.terrain_zones = [
+            TerrainZone(
+                id=zone.id,
+                x=zone.x,
+                y=zone.y,
+                width=zone.width,
+                height=zone.height,
+                terrain_type=zone.terrain_type,
+                label=zone.label,
+            )
+            for zone in TERRAIN_PRESETS[preset]
+        ]
+        active_battles[session_id] = (state, strategy)
+        return
 
     if message_type == "upgrade_defense":
         upgrade = message.get("upgrade")
@@ -285,9 +345,15 @@ async def battle_ws(ws: WebSocket, session_id: str):
                     active_battles[session_id] = (state, strategy)
                 else:
                     params = tournament.best.params if tournament.best else None
+                    persistent_assets = state.defense_assets
+                    persistent_upgrades = state.defense_upgrades
+                    persistent_terrain = state.terrain_zones
                     state, strategy = make_battle(
                         session_id=session_id,
-                        strategy_params=params
+                        strategy_params=params,
+                        defense_assets=persistent_assets,
+                        defense_upgrades=persistent_upgrades,
+                        terrain_zones=persistent_terrain,
                     )
                     active_battles[session_id] = (state, strategy)
 

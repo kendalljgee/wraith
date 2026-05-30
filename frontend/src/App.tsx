@@ -3,7 +3,7 @@ import EvolutionPanel from './components/EvolutionPanel'
 import { useBattleSocket } from './hooks/useBattleSocket'
 import BattleCanvas from './renderer/BattleCanvas'
 import { useStore } from './store/battleStore'
-import type { DefenseAssetType, DefenseUpgrade } from './store/battleStore'
+import type { DefenseAssetType, DefenseUpgrade, TerrainZone } from './store/battleStore'
 
 const SESSION_ID = 'dev-session-001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
@@ -28,6 +28,28 @@ const UPGRADE_TOOLS: Array<{
   { key: 'sensor_fusion', label: 'Sensor fusion' },
 ]
 
+const TERRAIN_PRESETS: Record<string, TerrainZone[]> = {
+  clear: [],
+  urban: [
+    { id: 'urban_core', x: 260, y: 210, width: 280, height: 180, type: 'urban', label: 'Urban clutter' },
+  ],
+  ridge: [
+    { id: 'ridge_line', x: 120, y: 260, width: 560, height: 70, type: 'ridge', label: 'Ridgeline mask' },
+  ],
+  rf_shadow: [
+    { id: 'rf_shadow_north', x: 180, y: 120, width: 180, height: 220, type: 'rf_shadow', label: 'RF shadow' },
+    { id: 'rf_shadow_south', x: 500, y: 300, width: 160, height: 180, type: 'rf_shadow', label: 'RF shadow' },
+  ],
+}
+
+type AssetSpec = {
+  id: string
+  name: string
+  type: DefenseAssetType
+  radius: number
+  reload_time?: number
+}
+
 export default function App() {
   const {
     threatLevel,
@@ -37,9 +59,17 @@ export default function App() {
     defenseUpgrades,
     addDefenseAsset,
     moveDefenseAsset,
+    removeDefenseAsset,
     incrementDefenseUpgrade,
+    setTerrainZones,
   } = useStore()
-  const { placeDefenseAsset, moveDefenseAsset: sendMoveDefenseAsset, upgradeDefense } = useBattleSocket(SESSION_ID)
+  const {
+    placeDefenseAsset,
+    moveDefenseAsset: sendMoveDefenseAsset,
+    removeDefenseAsset: sendRemoveDefenseAsset,
+    setTerrainPreset,
+    upgradeDefense,
+  } = useBattleSocket(SESSION_ID)
 
   const alive = drones.filter(d => d.alive).length
   const disabled = drones.length - alive
@@ -47,9 +77,15 @@ export default function App() {
   const [challengeActive, setChallengeActive] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
   const [paused, setPaused] = useState(false)
+  const [removeMode, setRemoveMode] = useState(false)
+  const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
+  const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
 
-  const selectedTool = ASSET_TOOLS.find(tool => tool.type === selectedAsset)!
-  const selectedRadius = getAssetRadius(selectedAsset, selectedTool.radius, defenseUpgrades)
+  const selectedSpec = customSpecs.find(spec => spec.id === selectedSpecId)
+  const selectedTool = selectedSpec || ASSET_TOOLS.find(tool => tool.type === selectedAsset)!
+  const selectedRadius = getAssetRadius(selectedTool.type, selectedTool.radius, defenseUpgrades)
+  const selectedName = 'name' in selectedTool ? selectedTool.name : selectedTool.label
+  const selectedReload = 'reload_time' in selectedTool ? selectedTool.reload_time : undefined
 
   async function enterChallenge() {
     setChallengeActive(true)
@@ -67,6 +103,43 @@ export default function App() {
     const nextPaused = !paused
     setPaused(nextPaused)
     await fetch(`${API_URL}/api/battle/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+  }
+
+  function selectAssetTool(type: DefenseAssetType) {
+    setSelectedAsset(type)
+    setSelectedSpecId(null)
+    setRemoveMode(false)
+  }
+
+  async function importAssetSpecs(file: File | null) {
+    if (!file) return
+    const text = await file.text()
+    const parsed = JSON.parse(text) as Array<Partial<AssetSpec>>
+    const specs = parsed
+      .filter((spec): spec is Partial<AssetSpec> & { name: string; type: DefenseAssetType; radius: number } => (
+        typeof spec.name === 'string'
+        && (spec.type === 'jammer' || spec.type === 'interceptor' || spec.type === 'spoofer')
+        && typeof spec.radius === 'number'
+      ))
+      .map((spec, index) => ({
+        id: spec.id || `spec_${Date.now()}_${index}`,
+        name: spec.name,
+        type: spec.type,
+        radius: spec.radius,
+        reload_time: spec.reload_time,
+      }))
+
+    setCustomSpecs(specs)
+    if (specs[0]) {
+      setSelectedSpecId(specs[0].id)
+      setSelectedAsset(specs[0].type)
+      setRemoveMode(false)
+    }
+  }
+
+  function chooseTerrainPreset(preset: string) {
+    setTerrainZones(TERRAIN_PRESETS[preset] || [])
+    setTerrainPreset({ preset })
   }
 
   return (
@@ -99,7 +172,7 @@ export default function App() {
               onClick={enterChallenge}
               className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-300 hover:text-slate-100 hover:border-slate-500 transition-colors"
             >
-              Enter Challenge
+              Add Assets
             </button>
           )}
 
@@ -147,7 +220,7 @@ export default function App() {
             {ASSET_TOOLS.map(tool => (
               <button
                 key={tool.type}
-                onClick={() => setSelectedAsset(tool.type)}
+                onClick={() => selectAssetTool(tool.type)}
                 className={`text-xs border rounded px-2 py-1 transition-colors ${
                   selectedAsset === tool.type
                     ? 'border-slate-300 text-slate-100'
@@ -161,9 +234,46 @@ export default function App() {
                 {tool.label}
               </button>
             ))}
+            {customSpecs.map(spec => (
+              <button
+                key={spec.id}
+                onClick={() => {
+                  setSelectedSpecId(spec.id)
+                  setSelectedAsset(spec.type)
+                  setRemoveMode(false)
+                }}
+                className={`text-xs border rounded px-2 py-1 transition-colors ${
+                  selectedSpecId === spec.id
+                    ? 'border-slate-300 text-slate-100'
+                    : 'border-wraith-border text-slate-500 hover:text-slate-200'
+                }`}
+              >
+                {spec.name}
+              </button>
+            ))}
+            <button
+              onClick={() => setRemoveMode(true)}
+              className={`text-xs border rounded px-2 py-1 transition-colors ${
+                removeMode
+                  ? 'border-threat-critical text-threat-critical'
+                  : 'border-wraith-border text-slate-500 hover:text-slate-200'
+              }`}
+            >
+              Remove
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
+            <select
+              onChange={(event) => chooseTerrainPreset(event.target.value)}
+              className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-400"
+              defaultValue="clear"
+            >
+              <option value="clear">Clear terrain</option>
+              <option value="urban">Urban</option>
+              <option value="ridge">Ridge</option>
+              <option value="rf_shadow">RF shadow</option>
+            </select>
             {UPGRADE_TOOLS.map(upgrade => (
               <button
                 key={upgrade.key}
@@ -177,6 +287,18 @@ export default function App() {
                 {upgrade.label} {defenseUpgrades[upgrade.key]}/3
               </button>
             ))}
+            <label className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 transition-colors">
+              Import Specs
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) => {
+                  void importAssetSpecs(event.target.files?.[0] || null)
+                  event.currentTarget.value = ''
+                }}
+              />
+            </label>
           </div>
         </div>
       )}
@@ -187,16 +309,21 @@ export default function App() {
             mode={challengeActive ? 'challenge' : 'spectator'}
             selectedAsset={selectedAsset}
             previewRadius={selectedRadius}
+            removeMode={removeMode}
             onPlaceAsset={(asset) => {
               placeDefenseAsset({
                 id: asset.id,
+                name: selectedName,
                 asset_type: asset.type,
                 x: asset.x,
                 y: asset.y,
+                radius: selectedTool.radius,
+                reload_time: selectedReload,
               })
 
               addDefenseAsset({
                 id: asset.id,
+                name: selectedName,
                 x: asset.x,
                 y: asset.y,
                 type: asset.type,
@@ -207,6 +334,10 @@ export default function App() {
             onMoveAsset={(asset) => {
               moveDefenseAsset(asset.id, asset.x, asset.y)
               sendMoveDefenseAsset(asset)
+            }}
+            onRemoveAsset={(asset) => {
+              removeDefenseAsset(asset.id)
+              sendRemoveDefenseAsset(asset)
             }}
           />
           <div className="flex gap-6 mt-3 text-xs text-slate-500">

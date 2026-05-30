@@ -25,9 +25,20 @@ class DefenseAsset:
     y: float
     asset_type: str                    # "jammer", "interceptor", "spoofer"
     radius: float                      # effective range
+    name: str = ""
     active: bool = True
     cooldown: float = 0.0              # seconds until can fire again
     reload_time: float = 2.0           # seconds between interceptor shots
+
+@dataclass
+class TerrainZone:
+    id: str
+    x: float
+    y: float
+    width: float
+    height: float
+    terrain_type: str                  # "urban", "ridge", "rf_shadow"
+    label: str
 
 @dataclass
 class AttackStrategy:
@@ -53,6 +64,7 @@ class BattleState:
         "interceptor_readiness": 0,
         "sensor_fusion": 0,
     })
+    terrain_zones: list[TerrainZone] = field(default_factory=list)
 
 # ── constants ──────────────────────────────────────────────
 WIDTH, HEIGHT = 800.0, 600.0
@@ -167,6 +179,27 @@ def apply_attacks(
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
                 drone.spoofed = d < asset.radius
 
+def apply_terrain_effects(drones: list[Drone], terrain_zones: list[TerrainZone]) -> None:
+    for drone in drones:
+        if not drone.alive:
+            continue
+        for zone in terrain_zones:
+            in_zone = (
+                zone.x <= drone.x <= zone.x + zone.width
+                and zone.y <= drone.y <= zone.y + zone.height
+            )
+            if not in_zone:
+                continue
+
+            if zone.terrain_type == "urban":
+                drone.vx *= 0.9
+                drone.vy *= 0.9
+            elif zone.terrain_type == "ridge":
+                drone.vx *= 0.82
+                drone.vy *= 0.82
+            elif zone.terrain_type == "rf_shadow":
+                drone.jammed = True
+
 def apply_swarm_attack(
     drones: list[Drone],
     strategy: AttackStrategy
@@ -224,6 +257,8 @@ def tick(state: BattleState, strategy: AttackStrategy) -> BattleState:
     # Rebuild comms graph after jamming
     rebuild_comms_graph(state.drones)
 
+    apply_terrain_effects(state.drones, state.terrain_zones)
+
     # Move drones
     for drone in state.drones:
         update_drone(drone, state.drones)
@@ -254,7 +289,10 @@ def make_battle(
     n_drones: int = 30,
     session_id: Optional[str] = None,
     strategy_params: Optional[dict] = None,
-    defense_config: Optional[dict] = None
+    defense_config: Optional[dict] = None,
+    defense_assets: Optional[list[DefenseAsset]] = None,
+    defense_upgrades: Optional[dict[str, int]] = None,
+    terrain_zones: Optional[list[TerrainZone]] = None,
 ) -> tuple[BattleState, AttackStrategy]:
     # factory - create a fresh battle ready to tick
     sid = session_id or str(uuid.uuid4())
@@ -287,37 +325,25 @@ def make_battle(
             team="red"
         ))
 
-    # Default defense layout
     cfg = defense_config or {}
-    defense_assets = [
-        DefenseAsset(
-            id="jammer_1",
-            x=cfg.get("jammer_x", 250.0),
-            y=cfg.get("jammer_y", 350.0),
-            asset_type="jammer",
-            radius=cfg.get("jammer_radius", 110.0)
-        ),
-        DefenseAsset(
-            id="jammer_2",
-            x=cfg.get("jammer2_x", 550.0),
-            y=cfg.get("jammer2_y", 350.0),
-            asset_type="jammer",
-            radius=cfg.get("jammer_radius", 110.0)
-        ),
-        DefenseAsset(
-            id="interceptor_1",
-            x=400.0,
-            y=480.0,
-            asset_type="interceptor",
-            radius=cfg.get("interceptor_radius", 60.0),
-            reload_time=cfg.get("interceptor_reload", 2.0)
-        ),
-    ]
+    initial_assets = defense_assets if defense_assets is not None else cfg.get("defense_assets", [])
 
     state = BattleState(
         session_id=sid,
         drones=drones,
-        defense_assets=defense_assets
+        defense_assets=[
+            DefenseAsset(**asset) if isinstance(asset, dict) else asset
+            for asset in initial_assets
+        ],
+        defense_upgrades=defense_upgrades or {
+            "ew_range": 0,
+            "interceptor_readiness": 0,
+            "sensor_fusion": 0,
+        },
+        terrain_zones=[
+            TerrainZone(**zone) if isinstance(zone, dict) else zone
+            for zone in (terrain_zones or [])
+        ],
     )
 
     rebuild_comms_graph(drones)
@@ -333,6 +359,18 @@ def serialize_state(state: BattleState) -> dict:
         "objective_reached": state.objective_reached,
         "drones_disabled": state.drones_disabled,
         "defense_upgrades": state.defense_upgrades,
+        "terrain_zones": [
+            {
+                "id": z.id,
+                "x": z.x,
+                "y": z.y,
+                "width": z.width,
+                "height": z.height,
+                "type": z.terrain_type,
+                "label": z.label,
+            }
+            for z in state.terrain_zones
+        ],
         "drones": [
             {
                 "id": d.id,
@@ -351,6 +389,7 @@ def serialize_state(state: BattleState) -> dict:
         "defense_assets": [
             {
                 "id": a.id,
+                "name": a.name,
                 "x": a.x,
                 "y": a.y,
                 "type": a.asset_type,

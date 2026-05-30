@@ -7,6 +7,7 @@ import type {
   DefenseUpgrades,
   Drone,
   Generation,
+  TerrainZone,
 } from '../store/battleStore'
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8001'
@@ -16,6 +17,7 @@ type StateMessage = {
   drones: Drone[]
   defense_assets?: DefenseAsset[]
   defense_upgrades?: DefenseUpgrades
+  terrain_zones?: TerrainZone[]
 }
 
 type GenerationMessage = {
@@ -33,9 +35,12 @@ type BattleMessage = StateMessage | GenerationMessage | HydrateMessage
 type PlaceDefenseAssetCommand = {
   type: 'place_defense_asset'
   id: string
+  name?: string
   asset_type: DefenseAssetType
   x: number
   y: number
+  radius?: number
+  reload_time?: number
 }
 
 type MoveDefenseAssetCommand = {
@@ -48,6 +53,16 @@ type MoveDefenseAssetCommand = {
 type UpgradeDefenseCommand = {
   type: 'upgrade_defense'
   upgrade: DefenseUpgrade
+}
+
+type RemoveDefenseAssetCommand = {
+  type: 'remove_defense_asset'
+  id: string
+}
+
+type TerrainPresetCommand = {
+  type: 'set_terrain_preset'
+  preset: string
 }
 
 function isCompletionGeneration(
@@ -66,6 +81,7 @@ export function useBattleSocket(sessionId: string) {
     setDefenseAssets,
     setDefenseUpgrades,
     setEvolutionComplete,
+    setTerrainZones,
   } = useStore()
 
   useEffect(() => {
@@ -83,6 +99,7 @@ export function useBattleSocket(sessionId: string) {
           updateDrones(msg.drones)
           if (msg.defense_assets) setDefenseAssets(msg.defense_assets)
           if (msg.defense_upgrades) setDefenseUpgrades(msg.defense_upgrades)
+          if (msg.terrain_zones) setTerrainZones(msg.terrain_zones)
           const alive = msg.drones.filter((d) => d.alive).length
           const total = msg.drones.length
           const penetration = 1 - alive / total
@@ -119,6 +136,7 @@ export function useBattleSocket(sessionId: string) {
     setDefenseUpgrades,
     setEvolutionComplete,
     setThreatLevel,
+    setTerrainZones,
     updateDrones,
   ])
 
@@ -133,9 +151,19 @@ export function useBattleSocket(sessionId: string) {
       ws.current.send(JSON.stringify({ type: 'move_defense_asset', ...asset }))
       return true
     },
+    removeDefenseAsset: (asset: Omit<RemoveDefenseAssetCommand, 'type'>) => {
+      if (ws.current?.readyState !== WebSocket.OPEN) return false
+      ws.current.send(JSON.stringify({ type: 'remove_defense_asset', ...asset }))
+      return true
+    },
     upgradeDefense: (upgrade: Omit<UpgradeDefenseCommand, 'type'>) => {
       if (ws.current?.readyState !== WebSocket.OPEN) return false
       ws.current.send(JSON.stringify({ type: 'upgrade_defense', ...upgrade }))
+      return true
+    },
+    setTerrainPreset: (terrain: Omit<TerrainPresetCommand, 'type'>) => {
+      if (ws.current?.readyState !== WebSocket.OPEN) return false
+      ws.current.send(JSON.stringify({ type: 'set_terrain_preset', ...terrain }))
       return true
     },
   }

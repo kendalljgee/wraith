@@ -17,12 +17,23 @@ export type DefenseAssetType = 'jammer' | 'interceptor' | 'spoofer'
 
 export interface DefenseAsset {
   id: string
+  name?: string
   x: number
   y: number
   type: DefenseAssetType
   radius: number
   active: boolean
   reload_time?: number
+}
+
+export interface TerrainZone {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  type: 'urban' | 'ridge' | 'rf_shadow'
+  label: string
 }
 
 export interface Generation {
@@ -41,6 +52,7 @@ interface BattleState {
   drones: Drone[]
   defenseAssets: DefenseAsset[]
   defenseUpgrades: DefenseUpgrades
+  terrainZones: TerrainZone[]
   generations: Generation[]
   threatLevel: 'LOW' | 'ELEVATED' | 'CRITICAL'
   sessionId: string | null
@@ -52,7 +64,9 @@ interface BattleState {
   setDefenseUpgrades: (upgrades: DefenseUpgrades) => void
   addDefenseAsset: (asset: DefenseAsset) => void
   moveDefenseAsset: (id: string, x: number, y: number) => void
+  removeDefenseAsset: (id: string) => void
   incrementDefenseUpgrade: (upgrade: DefenseUpgrade) => void
+  setTerrainZones: (zones: TerrainZone[]) => void
   addGeneration: (gen: Generation) => void
   setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
   setSession: (id: string) => void
@@ -67,6 +81,7 @@ export const useStore = create<BattleState>((set) => ({
     interceptor_readiness: 0,
     sensor_fusion: 0,
   },
+  terrainZones: [],
   generations: [],
   threatLevel: 'LOW',
   sessionId: null,
@@ -80,12 +95,16 @@ export const useStore = create<BattleState>((set) => ({
       asset.id === id ? { ...asset, x, y } : asset
     )),
   })),
+  removeDefenseAsset: (id) => set((s) => ({
+    defenseAssets: s.defenseAssets.filter((asset) => asset.id !== id),
+  })),
   incrementDefenseUpgrade: (upgrade) => set((s) => ({
     defenseUpgrades: {
       ...s.defenseUpgrades,
       [upgrade]: Math.min(3, s.defenseUpgrades[upgrade] + 1),
     },
   })),
+  setTerrainZones: (terrainZones) => set({ terrainZones }),
   addGeneration: (gen) => set((s) => ({
     generations: [...s.generations.slice(-50), gen] // keep last 50
   })),
