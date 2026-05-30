@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@theme {
+  --color-wraith-bg: #080c10;
+  --color-wraith-panel: #111827;
+  --color-wraith-border: #1e2d3d;
+  --color-threat-low: #22c55e;
+  --color-threat-elevated: #f59e0b;
+  --color-threat-critical: #ef4444;
+}
+
 html,
 body,
 #root {

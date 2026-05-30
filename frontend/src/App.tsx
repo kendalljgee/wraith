@@ -3,18 +3,20 @@ import { useBattleSocket } from './hooks/useBattleSocket'
 import BattleCanvas from './renderer/BattleCanvas'
 import EvolutionPanel from './components/EvolutionPanel'
 import { useState } from 'react'
+import type { DefenseAssetType } from './store/battleStore'
 
 const SESSION_ID = 'dev-session-001'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 
 export default function App() {
   const { threatLevel, costDefender, costAttacker, connected, drones, addDefenseAsset } = useStore()
-  useBattleSocket(SESSION_ID)
+  const { placeDefenseAsset } = useBattleSocket(SESSION_ID)
 
   const alive = drones.filter(d => d.alive).length
   const total = drones.length
   const [paused, setPaused] = useState(false)
   const [mode, setMode] = useState<'watch' | 'challenge'>('watch')
-  const [selectedAsset, setSelectedAsset] = useState<string>('jammer')
+  const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
 
   return (
     <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-4">
@@ -35,9 +37,9 @@ export default function App() {
             setPaused(newPaused)
 
             // Pause/resume battle ticks
-            await fetch(`${import.meta.env.VITE_API_URL}/api/battle/${newPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+            await fetch(`${API_URL}/api/battle/${newPaused ? 'pause' : 'resume'}`, { method: 'POST' })
             // Also pause/resume the evolutionary tournament so the engine stops advancing
-            await fetch(`${import.meta.env.VITE_API_URL}/api/tournament/${newPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+            await fetch(`${API_URL}/api/tournament/${newPaused ? 'pause' : 'resume'}`, { method: 'POST' })
           }}
           className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
         >
@@ -46,12 +48,12 @@ export default function App() {
 
         {/* Mode & asset toolbar */}
         <div className="ml-3 flex items-center gap-2">
-          <select value={mode} onChange={(e) => setMode(e.target.value as any)} className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1">
+          <select value={mode} onChange={(e) => setMode(e.target.value as 'watch' | 'challenge')} className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1">
             <option value="watch">Watch</option>
             <option value="challenge">Challenge</option>
           </select>
 
-          <select value={selectedAsset} onChange={(e) => setSelectedAsset(e.target.value)} className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1">
+          <select value={selectedAsset} onChange={(e) => setSelectedAsset(e.target.value as DefenseAssetType)} className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1">
             <option value="jammer">Jammer</option>
             <option value="interceptor">Interceptor</option>
             <option value="spoofer">Spoofer</option>
@@ -109,13 +111,20 @@ export default function App() {
             mode={mode === 'watch' ? 'spectator' : 'challenge'}
             selectedAsset={selectedAsset}
             onPlaceAsset={(asset) => {
-              // Add to frontend store so it appears in the UI immediately.
+              const type = asset.type || selectedAsset
+              placeDefenseAsset({
+                asset_type: type,
+                x: asset.x,
+                y: asset.y,
+              })
+
+              // Add optimistically so placement appears before the next socket tick.
               addDefenseAsset({
                 id: `manual_${Date.now()}`,
                 x: asset.x,
                 y: asset.y,
-                type: asset.type || selectedAsset,
-                radius: asset.type === 'interceptor' ? 60 : 110,
+                type,
+                radius: type === 'interceptor' ? 60 : 110,
                 active: true,
               })
             }}

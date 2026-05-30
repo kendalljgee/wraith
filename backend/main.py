@@ -1,12 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from swarm import make_battle, tick, serialize_state, DT
+from swarm import DefenseAsset, HEIGHT, WIDTH, make_battle, tick, serialize_state, DT
 from tournament import tournament
 from ai_client import complete
 import asyncio
 import json
-import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,8 +34,10 @@ async def llm_mutation_callback(best_strategy) -> dict:
         model_key="analyst",
         max_tokens=200,
     )
-    # Strip markdown fences if present
-    clean = result.strip().strip("```json").strip("```").strip()
+    clean = result.strip()
+    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", clean, re.DOTALL)
+    if fence_match:
+        clean = fence_match.group(1).strip()
     return json.loads(clean)
 
 # ── broadcast helper ───────────────────────────────────────
@@ -79,18 +81,29 @@ class ConnectionManager:
     def disconnect(self, ws: WebSocket, session_id: str):
         if ws in self.active.get(session_id, []):
             self.active[session_id].remove(ws)
+        if not self.active.get(session_id):
+            self.active.pop(session_id, None)
 
     async def broadcast(self, session_id: str, data: dict):
+        stale = []
         for ws in self.active.get(session_id, []):
             try:
                 await ws.send_json(data)
             except Exception:
-                pass
+                stale.append(ws)
+        for ws in stale:
+            self.disconnect(ws, session_id)
 
 manager = ConnectionManager()
 active_battles: dict[str, tuple] = {}
 # Global pause flag (pauses all simulations when True)
 battle_paused: bool = False
+
+ASSET_RADII = {
+    "jammer": 110.0,
+    "interceptor": 60.0,
+    "spoofer": 110.0,
+}
 
 # ── routes ─────────────────────────────────────────────────
 
@@ -136,6 +149,52 @@ async def resume_tournament():
     tournament.paused = False
     return {"status": "tournament resumed"}
 
+
+def clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def make_manual_asset(payload: dict) -> DefenseAsset | None:
+    asset_type = payload.get("asset_type")
+    if asset_type not in ASSET_RADII:
+        return None
+
+    try:
+        x = clamp(float(payload.get("x")), 0.0, WIDTH)
+        y = clamp(float(payload.get("y")), 0.0, HEIGHT)
+    except (TypeError, ValueError):
+        return None
+
+    return DefenseAsset(
+        id=f"manual_{asset_type}_{int(x)}_{int(y)}",
+        x=x,
+        y=y,
+        asset_type=asset_type,
+        radius=ASSET_RADII[asset_type],
+    )
+
+
+async def handle_battle_command(session_id: str, message: dict) -> None:
+    if message.get("type") != "place_defense_asset":
+        return
+
+    battle = active_battles.get(session_id)
+    if not battle:
+        return
+
+    asset = make_manual_asset(message)
+    if not asset:
+        return
+
+    state, strategy = battle
+    state.defense_assets.append(asset)
+    active_battles[session_id] = (state, strategy)
+
+
+async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:
+    while True:
+        queue.put_nowait(await ws.receive_json())
+
 @app.websocket("/ws/battle/{session_id}")
 async def battle_ws(ws: WebSocket, session_id: str):
     await manager.connect(ws, session_id)
@@ -151,10 +210,20 @@ async def battle_ws(ws: WebSocket, session_id: str):
     params = tournament.best.params if tournament.best else None
     state, strategy = make_battle(session_id=session_id, strategy_params=params)
     active_battles[session_id] = (state, strategy)
+    commands: asyncio.Queue = asyncio.Queue()
+    command_reader = asyncio.create_task(receive_battle_commands(ws, commands))
 
     try:
         while True:
+            if command_reader.done():
+                command_reader.result()
+
             state, strategy = active_battles[session_id]
+
+            while not commands.empty():
+                message = commands.get_nowait()
+                await handle_battle_command(session_id, message)
+                state, strategy = active_battles[session_id]
 
             # If paused, do not advance simulation ticks. Still broadcast
             # current state so clients know the simulation is paused.
@@ -175,4 +244,7 @@ async def battle_ws(ws: WebSocket, session_id: str):
 
     except WebSocketDisconnect:
         manager.disconnect(ws, session_id)
-        active_battles.pop(session_id, None)
+        if session_id not in manager.active:
+            active_battles.pop(session_id, None)
+    finally:
+        command_reader.cancel()

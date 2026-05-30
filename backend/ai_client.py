@@ -1,6 +1,5 @@
 import os
 import aiohttp
-import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +26,9 @@ async def complete(
     max_tokens: int = 500,
     json_mode: bool = False      # kept for compatibility but handled differently
 ) -> str:
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY is not set")
+
     model = MODELS[model_key]
     payload = {
         "model": model,
@@ -51,6 +53,9 @@ async def complete_system(
     model_key: str = "analyst",
     max_tokens: int = 1000
 ) -> str:
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY is not set")
+
     model = MODELS[model_key]
     payload = {
         "model": model,

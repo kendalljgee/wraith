@@ -13,6 +13,17 @@ export interface Drone {
   spoofed: boolean
 }
 
+export type DefenseAssetType = 'jammer' | 'interceptor' | 'spoofer'
+
+export interface DefenseAsset {
+  id: string
+  x: number
+  y: number
+  type: DefenseAssetType
+  radius: number
+  active: boolean
+}
+
 export interface Generation {
   number: number
   fitness: number
@@ -23,7 +34,7 @@ export interface Generation {
 
 interface BattleState {
   drones: Drone[]
-  defenseAssets: any[]
+  defenseAssets: DefenseAsset[]
   generations: Generation[]
   threatLevel: 'LOW' | 'ELEVATED' | 'CRITICAL'
   costDefender: number
@@ -33,8 +44,8 @@ interface BattleState {
   evolutionComplete: boolean
   setEvolutionComplete: (v: boolean) => void
   updateDrones: (drones: Drone[]) => void
-  setDefenseAssets: (assets: any[]) => void
-  addDefenseAsset: (asset: any) => void
+  setDefenseAssets: (assets: DefenseAsset[]) => void
+  addDefenseAsset: (asset: DefenseAsset) => void
   addGeneration: (gen: Generation) => void
   setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
   updateCosts: (defender: number, attacker: number) => void

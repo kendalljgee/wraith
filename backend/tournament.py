@@ -110,7 +110,6 @@ class Tournament:
 
     def _increase_defense_difficulty(self):
         """Make defense harder as attacks improve."""
-        from evolution import DEFAULT_PARAMS
         # Increase interceptor speed and jammer radius in future battles
         # by modifying make_battle defaults via a global config
         import swarm

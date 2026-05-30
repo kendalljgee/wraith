@@ -1,15 +1,15 @@
 import { useEffect, useRef } from 'react'
 import * as PIXI from 'pixi.js'
 import { useStore } from '../store/battleStore'
-import type { Drone } from '../store/battleStore'
+import type { DefenseAssetType, Drone } from '../store/battleStore'
 
 const WIDTH = 800
 const HEIGHT = 600
 
 interface BattleCanvasProps {
-  mode?: 'challenge' | 'spectator' | 'edit' | string
-  onPlaceAsset?: (asset: { x: number; y: number; type?: string }) => void
-  selectedAsset?: string
+  mode?: 'challenge' | 'spectator' | 'edit'
+  onPlaceAsset?: (asset: { x: number; y: number; type?: DefenseAssetType }) => void
+  selectedAsset?: DefenseAssetType
 }
 
 export default function BattleCanvas({
@@ -26,11 +26,11 @@ export default function BattleCanvas({
   // refs to avoid stale closures in the Pixi event handler
   const modeRef = useRef<string>(mode)
   const onPlaceAssetRef = useRef<typeof onPlaceAsset | null>(onPlaceAsset || null)
-  const selectedAssetRef = useRef<string | undefined>(selectedAsset)
-  const pointerHandlerRef = useRef<any>(null)
+  const selectedAssetRef = useRef<DefenseAssetType | undefined>(selectedAsset)
+  const pointerHandlerRef = useRef<((event: PIXI.FederatedPointerEvent) => void) | null>(null)
 
   const drones = useStore(s => s.drones)
-  const defenseAssets = useStore((s: any) => s.defenseAssets || [])
+  const defenseAssets = useStore(s => s.defenseAssets)
 
   // keep refs up-to-date
   useEffect(() => {
@@ -44,6 +44,7 @@ export default function BattleCanvas({
     if (!canvasRef.current || appRef.current) return
 
     const app = new PIXI.Application()
+    const sprites = droneSprites.current
     // Initialize the renderer — app.canvas becomes available after init() completes
     app.init({
       width: WIDTH,
@@ -83,12 +84,11 @@ export default function BattleCanvas({
       obj.stroke({ color: 0xef4444, width: 1, alpha: 0.6 })
       app.stage.addChild(obj)
 
-      // Add onClick handler to the PixiJS canvas
-      // Use eventMode static so stage receives pointer events
-      // (use loose any types for interaction event to avoid PIXI typing issues)
+      // Add onClick handler to the PixiJS canvas.
+      // Use eventMode static so stage receives pointer events.
       app.stage.eventMode = 'static'
-      const pointerDownHandler = (e: any) => {
-        const pos = e?.data?.global || e?.global
+      const pointerDownHandler = (e: PIXI.FederatedPointerEvent) => {
+        const pos = e.global
         if (!pos) return
         // Only call when in challenge mode
         if (modeRef.current !== 'challenge') return
@@ -100,13 +100,11 @@ export default function BattleCanvas({
 
     return () => {
       // Remove pointer handler if present
-      try {
-        if (pointerHandlerRef.current) app.stage.off('pointerdown', pointerHandlerRef.current)
-        pointerHandlerRef.current = null
-      } catch (e) {}
+      if (pointerHandlerRef.current) app.stage.off('pointerdown', pointerHandlerRef.current)
+      pointerHandlerRef.current = null
       app.destroy(true)
       appRef.current = null
-      droneSprites.current.clear()
+      sprites.clear()
     }
   }, [])
 
@@ -129,7 +127,6 @@ export default function BattleCanvas({
 
         // Status dot (jammed/spoofed indicator)
         const dot = new PIXI.Graphics()
-        ;(dot as any).label = 'status'
         container.addChild(dot)
 
         stage.addChild(container)
@@ -193,7 +190,7 @@ export default function BattleCanvas({
     const dLayer = defenseLayer.current
     if (dLayer) {
       dLayer.clear()
-      defenseAssets.forEach((asset: any) => {
+      defenseAssets.forEach((asset) => {
         if (!asset.active) return
         const color = asset.type === 'jammer'      ? 0xf59e0b
                     : asset.type === 'interceptor' ? 0xef4444

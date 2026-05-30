@@ -1,6 +1,5 @@
 import random
 import uuid
-from dataclasses import dataclass, field
 from typing import Optional
 from swarm import AttackStrategy, BattleState, make_battle, tick, WIDTH, HEIGHT
 
@@ -70,25 +69,13 @@ def mutate(strategy: AttackStrategy, llm_suggestion: Optional[dict] = None) -> A
         param = llm_suggestion.get("param")
         value = llm_suggestion.get("new_value")
         if param and value is not None and param in params:
-            params[param] = value
-            is_llm = True
-    else:
-        # Random mutation: pick one parameter and perturb it
-        key = random.choice(list(PARAM_BOUNDS.keys()))
-        bounds = PARAM_BOUNDS[key]
+            coerced = coerce_param_value(param, value)
+            if coerced is not None:
+                params[param] = coerced
+                is_llm = True
 
-        if isinstance(bounds, list):
-            # Categorical — pick a different value
-            options = [v for v in bounds if v != params.get(key)]
-            params[key] = random.choice(options) if options else params[key]
-        else:
-            # Continuous — perturb by ±20%
-            lo, hi = bounds
-            current = params.get(key, (lo + hi) / 2)
-            delta = (hi - lo) * 0.2
-            params[key] = round(
-                max(lo, min(hi, current + random.uniform(-delta, delta))), 2
-            )
+    if not is_llm:
+        apply_random_mutation(params)
 
     return AttackStrategy(
         id=str(uuid.uuid4()),
@@ -96,6 +83,46 @@ def mutate(strategy: AttackStrategy, llm_suggestion: Optional[dict] = None) -> A
         params=params,
         is_llm_guided=is_llm,
         llm_reasoning=llm_suggestion.get("reasoning") if llm_suggestion else None
+    )
+
+
+def coerce_param_value(param: str, value) -> Optional[str | float]:
+    """Validate LLM-supplied mutation values against known bounds."""
+    bounds = PARAM_BOUNDS.get(param)
+    if bounds is None:
+        return None
+
+    if isinstance(bounds, list):
+        if value in bounds:
+            return value
+        return None
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    lo, hi = bounds
+    return round(max(lo, min(hi, numeric)), 2)
+
+
+def apply_random_mutation(params: dict) -> None:
+    """Pick one known parameter and mutate it in-place."""
+    key = random.choice(list(PARAM_BOUNDS.keys()))
+    bounds = PARAM_BOUNDS[key]
+
+    if isinstance(bounds, list):
+        # Categorical - pick a different value
+        options = [v for v in bounds if v != params.get(key)]
+        params[key] = random.choice(options) if options else params[key]
+        return
+
+    # Continuous - perturb by +/-20%
+    lo, hi = bounds
+    current = params.get(key, (lo + hi) / 2)
+    delta = (hi - lo) * 0.2
+    params[key] = round(
+        max(lo, min(hi, current + random.uniform(-delta, delta))), 2
     )
 
 
