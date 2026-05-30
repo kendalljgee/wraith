@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from '../store/battleStore'
-import type { DefenseAsset, DefenseAssetType, Drone, Generation } from '../store/battleStore'
+import type {
+  DefenseAsset,
+  DefenseAssetType,
+  DefenseUpgrade,
+  DefenseUpgrades,
+  Drone,
+  Generation,
+} from '../store/battleStore'
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8001'
 
@@ -8,10 +15,7 @@ type StateMessage = {
   type: 'state'
   drones: Drone[]
   defense_assets?: DefenseAsset[]
-  costs?: {
-    defender: number
-    attacker: number
-  }
+  defense_upgrades?: DefenseUpgrades
 }
 
 type GenerationMessage = {
@@ -24,19 +28,18 @@ type HydrateMessage = {
   history: Generation[]
 }
 
-type CostsMessage = {
-  type: 'costs'
-  defender: number
-  attacker: number
-}
-
-type BattleMessage = StateMessage | GenerationMessage | HydrateMessage | CostsMessage
+type BattleMessage = StateMessage | GenerationMessage | HydrateMessage
 
 type PlaceDefenseAssetCommand = {
   type: 'place_defense_asset'
   asset_type: DefenseAssetType
   x: number
   y: number
+}
+
+type UpgradeDefenseCommand = {
+  type: 'upgrade_defense'
+  upgrade: DefenseUpgrade
 }
 
 function isCompletionGeneration(
@@ -51,12 +54,11 @@ export function useBattleSocket(sessionId: string) {
     updateDrones,
     addGeneration,
     setThreatLevel,
-    updateCosts,
     setConnected,
     setDefenseAssets,
+    setDefenseUpgrades,
     setEvolutionComplete,
   } = useStore()
-  const costClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!sessionId) return
@@ -72,16 +74,7 @@ export function useBattleSocket(sessionId: string) {
         case 'state': {
           updateDrones(msg.drones)
           if (msg.defense_assets) setDefenseAssets(msg.defense_assets)
-          if (msg.costs) {
-            updateCosts(msg.costs.defender, msg.costs.attacker)
-            // clear previous timer
-            if (costClearTimer.current) clearTimeout(costClearTimer.current)
-            // keep recent costs visible for 3s, then decay to zero
-            costClearTimer.current = setTimeout(() => {
-              updateCosts(0, 0)
-              costClearTimer.current = null
-            }, 3000)
-          }
+          if (msg.defense_upgrades) setDefenseUpgrades(msg.defense_upgrades)
           const alive = msg.drones.filter((d) => d.alive).length
           const total = msg.drones.length
           const penetration = 1 - alive / total
@@ -102,18 +95,12 @@ export function useBattleSocket(sessionId: string) {
           // Restore full history on reconnect
           msg.history.forEach((g) => addGeneration(g))
           return
-        case 'costs':
-          return updateCosts(msg.defender, msg.attacker)
       }
     }
 
     ws.current.onerror = (e) => console.error('WRAITH socket error:', e)
 
     return () => {
-      if (costClearTimer.current) {
-        clearTimeout(costClearTimer.current)
-        costClearTimer.current = null
-      }
       ws.current?.close()
     }
   }, [
@@ -121,9 +108,9 @@ export function useBattleSocket(sessionId: string) {
     sessionId,
     setConnected,
     setDefenseAssets,
+    setDefenseUpgrades,
     setEvolutionComplete,
     setThreatLevel,
-    updateCosts,
     updateDrones,
   ])
 
@@ -131,6 +118,11 @@ export function useBattleSocket(sessionId: string) {
     placeDefenseAsset: (asset: Omit<PlaceDefenseAssetCommand, 'type'>) => {
       if (ws.current?.readyState !== WebSocket.OPEN) return false
       ws.current.send(JSON.stringify({ type: 'place_defense_asset', ...asset }))
+      return true
+    },
+    upgradeDefense: (upgrade: Omit<UpgradeDefenseCommand, 'type'>) => {
+      if (ws.current?.readyState !== WebSocket.OPEN) return false
+      ws.current.send(JSON.stringify({ type: 'upgrade_defense', ...upgrade }))
       return true
     },
   }

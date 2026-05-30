@@ -27,6 +27,7 @@ class DefenseAsset:
     radius: float                      # effective range
     active: bool = True
     cooldown: float = 0.0              # seconds until can fire again
+    reload_time: float = 2.0           # seconds between interceptor shots
 
 @dataclass
 class AttackStrategy:
@@ -47,6 +48,11 @@ class BattleState:
     drones_disabled: int = 0
     objective_reached: bool = False
     terminal: bool = False
+    defense_upgrades: dict[str, int] = field(default_factory=lambda: {
+        "ew_range": 0,
+        "interceptor_readiness": 0,
+        "sensor_fusion": 0,
+    })
 
 # ── constants ──────────────────────────────────────────────
 WIDTH, HEIGHT = 800.0, 600.0
@@ -125,7 +131,7 @@ def apply_attacks(
     strategy: AttackStrategy
 ) -> None:
     # apply active attack effects each tick
-    params = strategy.params
+    _ = strategy
 
     for asset in defense_assets:
         if not asset.active:
@@ -150,7 +156,7 @@ def apply_attacks(
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
                 if d < asset.radius:
                     drone.alive = False
-                    asset.cooldown = params.get("interceptor_cooldown", 2.0)
+                    asset.cooldown = asset.reload_time
                     break                      # one kill per tick per interceptor
 
         elif asset.asset_type == "spoofer":
@@ -303,7 +309,8 @@ def make_battle(
             x=400.0,
             y=480.0,
             asset_type="interceptor",
-            radius=cfg.get("interceptor_radius", 60.0)
+            radius=cfg.get("interceptor_radius", 60.0),
+            reload_time=cfg.get("interceptor_reload", 2.0)
         ),
     ]
 
@@ -317,9 +324,6 @@ def make_battle(
     return state, strategy
 
 def serialize_state(state: BattleState) -> dict:
-    alive = sum(1 for d in state.drones if d.alive)
-    total = len(state.drones)
-    disabled = total - alive
     # convert BattleState to JSON-serializable dict for WebSocket broadcast
     return {
         "type": "state",
@@ -328,10 +332,7 @@ def serialize_state(state: BattleState) -> dict:
         "terminal": state.terminal,
         "objective_reached": state.objective_reached,
         "drones_disabled": state.drones_disabled,
-        "costs": {
-            "attacker": disabled * 500,       # $500 per drone lost
-            "defender": disabled * 150000,    # $150K per interceptor use
-        },
+        "defense_upgrades": state.defense_upgrades,
         "drones": [
             {
                 "id": d.id,
@@ -355,6 +356,7 @@ def serialize_state(state: BattleState) -> dict:
                 "type": a.asset_type,
                 "radius": a.radius,
                 "active": a.active,
+                "reload_time": round(a.reload_time, 2),
             }
             for a in state.defense_assets
         ]

@@ -104,6 +104,7 @@ ASSET_RADII = {
     "interceptor": 60.0,
     "spoofer": 110.0,
 }
+MAX_UPGRADE_LEVEL = 3
 
 # ── routes ─────────────────────────────────────────────────
 
@@ -154,7 +155,27 @@ def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
-def make_manual_asset(payload: dict) -> DefenseAsset | None:
+def asset_radius(asset_type: str, upgrades: dict[str, int]) -> float:
+    radius = ASSET_RADII[asset_type]
+    if asset_type in {"jammer", "spoofer"}:
+        radius *= 1 + upgrades.get("ew_range", 0) * 0.15
+    radius *= 1 + upgrades.get("sensor_fusion", 0) * 0.08
+    return round(radius, 1)
+
+
+def interceptor_reload(upgrades: dict[str, int]) -> float:
+    return max(0.75, round(2.0 - upgrades.get("interceptor_readiness", 0) * 0.35, 2))
+
+
+def apply_defense_upgrades(state) -> None:
+    for asset in state.defense_assets:
+        asset.radius = asset_radius(asset.asset_type, state.defense_upgrades)
+        if asset.asset_type == "interceptor":
+            asset.reload_time = interceptor_reload(state.defense_upgrades)
+            asset.cooldown = min(asset.cooldown, asset.reload_time)
+
+
+def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> DefenseAsset | None:
     asset_type = payload.get("asset_type")
     if asset_type not in ASSET_RADII:
         return None
@@ -165,30 +186,45 @@ def make_manual_asset(payload: dict) -> DefenseAsset | None:
     except (TypeError, ValueError):
         return None
 
+    upgrade_state = upgrades or {}
     return DefenseAsset(
         id=f"manual_{asset_type}_{int(x)}_{int(y)}",
         x=x,
         y=y,
         asset_type=asset_type,
-        radius=ASSET_RADII[asset_type],
+        radius=asset_radius(asset_type, upgrade_state),
+        reload_time=interceptor_reload(upgrade_state),
     )
 
 
 async def handle_battle_command(session_id: str, message: dict) -> None:
-    if message.get("type") != "place_defense_asset":
-        return
-
     battle = active_battles.get(session_id)
     if not battle:
         return
 
-    asset = make_manual_asset(message)
-    if not asset:
+    state, strategy = battle
+    message_type = message.get("type")
+
+    if message_type == "place_defense_asset":
+        asset = make_manual_asset(message, state.defense_upgrades)
+        if not asset:
+            return
+
+        state.defense_assets.append(asset)
+        active_battles[session_id] = (state, strategy)
         return
 
-    state, strategy = battle
-    state.defense_assets.append(asset)
-    active_battles[session_id] = (state, strategy)
+    if message_type == "upgrade_defense":
+        upgrade = message.get("upgrade")
+        if upgrade not in state.defense_upgrades:
+            return
+
+        state.defense_upgrades[upgrade] = min(
+            MAX_UPGRADE_LEVEL,
+            state.defense_upgrades[upgrade] + 1,
+        )
+        apply_defense_upgrades(state)
+        active_battles[session_id] = (state, strategy)
 
 
 async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:

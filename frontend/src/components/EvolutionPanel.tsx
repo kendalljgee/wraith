@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { useStore } from '../store/battleStore'
 
-export default function EvolutionPanel() {
+interface EvolutionPanelProps {
+  challengeActive?: boolean
+}
+
+export default function EvolutionPanel({ challengeActive = false }: EvolutionPanelProps) {
   const generations = useStore(s => s.generations)
   const evolutionComplete = useStore(s => s.evolutionComplete)
   const [expandedGen, setExpandedGen] = useState<number | null>(null)
   const best = generations.length > 0
     ? Math.max(...generations.map(g => g.fitness))
     : 0
+  const latestLlm = [...generations].reverse().find(gen => gen.isLLM && gen.reasoning)
 
   return (
     <div className="border border-wraith-border rounded p-3 h-full flex flex-col">
@@ -26,14 +31,23 @@ export default function EvolutionPanel() {
           </div>
         </div>
         <div className="text-xs text-slate-600 uppercase tracking-widest">
-          {generations.length === 0 ? 'Initializing...' : 'Running'}
+          {challengeActive ? 'Defense Planning' : generations.length === 0 ? 'Initializing...' : 'Running'}
+        </div>
+      </div>
+
+      <div className="mb-3 border border-wraith-border rounded p-2">
+        <div className="text-xs text-slate-500 uppercase tracking-widest mb-1">
+          LLM Reasoning
+        </div>
+        <div className="text-xs text-slate-300">
+          {latestLlm?.reasoning || 'Waiting for the analyst model to propose a mutation.'}
         </div>
       </div>
 
       {/* Completion banner */}
       {evolutionComplete && (
         <div className="mb-2 p-2 bg-amber-900 text-amber-100 rounded text-xs">
-          Evolution complete — no further generations will be produced.
+          Evolution complete - no further generations will be produced.
         </div>
       )}
 
@@ -72,7 +86,7 @@ export default function EvolutionPanel() {
 
                 {/* LLM badge (click to expand reasoning) */}
                 {gen.isLLM && (
-                  <button className="text-amber-400 shrink-0" onClick={() => setExpandedGen(expandedGen === gen.number ? null : gen.number)}>⚡</button>
+                  <button className="text-amber-400 shrink-0" onClick={() => setExpandedGen(expandedGen === gen.number ? null : gen.number)}>LLM</button>
                 )}
 
                 {/* Attack type */}

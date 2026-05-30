@@ -22,6 +22,7 @@ export interface DefenseAsset {
   type: DefenseAssetType
   radius: number
   active: boolean
+  reload_time?: number
 }
 
 export interface Generation {
@@ -32,23 +33,26 @@ export interface Generation {
   reasoning?: string
 }
 
+export type DefenseUpgrade = 'ew_range' | 'interceptor_readiness' | 'sensor_fusion'
+
+export type DefenseUpgrades = Record<DefenseUpgrade, number>
+
 interface BattleState {
   drones: Drone[]
   defenseAssets: DefenseAsset[]
+  defenseUpgrades: DefenseUpgrades
   generations: Generation[]
   threatLevel: 'LOW' | 'ELEVATED' | 'CRITICAL'
-  costDefender: number
-  costAttacker: number
   sessionId: string | null
   connected: boolean
   evolutionComplete: boolean
   setEvolutionComplete: (v: boolean) => void
   updateDrones: (drones: Drone[]) => void
   setDefenseAssets: (assets: DefenseAsset[]) => void
+  setDefenseUpgrades: (upgrades: DefenseUpgrades) => void
   addDefenseAsset: (asset: DefenseAsset) => void
   addGeneration: (gen: Generation) => void
   setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
-  updateCosts: (defender: number, attacker: number) => void
   setSession: (id: string) => void
   setConnected: (connected: boolean) => void
 }
@@ -56,20 +60,23 @@ interface BattleState {
 export const useStore = create<BattleState>((set) => ({
   drones: [],
   defenseAssets: [],
+  defenseUpgrades: {
+    ew_range: 0,
+    interceptor_readiness: 0,
+    sensor_fusion: 0,
+  },
   generations: [],
   threatLevel: 'LOW',
-  costDefender: 0,
-  costAttacker: 0,
   sessionId: null,
   connected: false,
   evolutionComplete: false,
   updateDrones: (drones) => set({ drones }),
   setDefenseAssets: (defenseAssets) => set({ defenseAssets }),
+  setDefenseUpgrades: (defenseUpgrades) => set({ defenseUpgrades }),
   addGeneration: (gen) => set((s) => ({
     generations: [...s.generations.slice(-50), gen] // keep last 50
   })),
   setThreatLevel: (threatLevel) => set({ threatLevel }),
-  updateCosts: (costDefender, costAttacker) => set({ costDefender, costAttacker }),
   setSession: (sessionId) => set({ sessionId }),
   setConnected: (connected) => set({ connected }),
   setEvolutionComplete: (v: boolean) => set({ evolutionComplete: v }),
