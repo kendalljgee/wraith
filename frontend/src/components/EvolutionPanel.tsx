@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../store/battleStore'
 
+const MAX_ATTACK_FITNESS = 1.8
+
 interface EvolutionPanelProps {
   challengeActive?: boolean
 }
@@ -26,7 +28,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
           <div className="text-sm text-slate-200 mt-0.5">
             Gen {generations.length}
             <span className="text-slate-500 text-xs ml-2">
-              best {(best * 100).toFixed(1)}%
+              attack fitness {best.toFixed(2)}/{MAX_ATTACK_FITNESS.toFixed(1)}
             </span>
           </div>
         </div>
@@ -71,7 +73,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
-                    width: `${gen.fitness * 100}%`,
+                    width: `${Math.min(100, (gen.fitness / MAX_ATTACK_FITNESS) * 100)}%`,
                     backgroundColor: gen.isLLM ? '#f59e0b' : '#22c55e'
                   }}
                 />
@@ -81,7 +83,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
               <span className={`w-10 text-right shrink-0 ${
                 gen.isLLM ? 'text-amber-400' : 'text-emerald-400'
               }`}>
-                {(gen.fitness * 100).toFixed(1)}%
+                {gen.fitness.toFixed(2)}
               </span>
 
                 {/* LLM badge (click to expand reasoning) */}

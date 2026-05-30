@@ -10,6 +10,7 @@ import re
 from dotenv import load_dotenv
 
 load_dotenv()
+tournament_task: asyncio.Task | None = None
 
 # ── LLM mutation callback ──────────────────────────────────
 
@@ -54,10 +55,13 @@ async def broadcast_generation(record: dict):
 
 @asynccontextmanager
 async def lifespan(app):
+    global tournament_task
     tournament.on_generation = broadcast_generation
-    asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
+    tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
     yield
     tournament.stop()
+    if tournament_task:
+        tournament_task.cancel()
 
 app = FastAPI(title="WRAITH Backend", lifespan=lifespan)
 
@@ -118,6 +122,11 @@ TERRAIN_PRESETS = {
         TerrainZone("rf_shadow_south", 500.0, 300.0, 160.0, 180.0, "rf_shadow", "RF shadow"),
     ],
 }
+DEFAULT_UPGRADES = {
+    "ew_range": 0,
+    "interceptor_readiness": 0,
+    "sensor_fusion": 0,
+}
 
 # ── routes ─────────────────────────────────────────────────
 
@@ -164,6 +173,41 @@ async def resume_tournament():
     return {"status": "tournament resumed"}
 
 
+@app.post("/api/system/reset")
+async def reset_system():
+    await reset_all_state()
+    return {"status": "reset"}
+
+
+async def reset_all_state():
+    global battle_paused, tournament_task
+    battle_paused = False
+
+    if tournament_task:
+        tournament.stop()
+        tournament_task.cancel()
+        try:
+            await tournament_task
+        except asyncio.CancelledError:
+            pass
+
+    tournament.reset_state()
+    tournament.on_generation = broadcast_generation
+    tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
+
+    for session_id in list(active_battles.keys()):
+        params = tournament.best.params if tournament.best else None
+        state, strategy = make_battle(session_id=session_id, strategy_params=params)
+        active_battles[session_id] = (state, strategy)
+        await manager.broadcast(session_id, {"type": "reset"})
+        await manager.broadcast(session_id, {
+            "type": "hydrate",
+            "history": [],
+            "generation": 0,
+        })
+        await manager.broadcast(session_id, serialize_state(state))
+
+
 def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
@@ -198,6 +242,27 @@ def apply_defense_upgrades(state) -> None:
         if asset.asset_type == "interceptor":
             asset.reload_time = interceptor_reload(state.defense_upgrades)
             asset.cooldown = min(asset.cooldown, asset.reload_time)
+
+
+def terrain_from_description(description: str) -> list[TerrainZone]:
+    text = description.lower()
+    zones: list[TerrainZone] = []
+
+    if "kabul" in text or "afghanistan" in text:
+        return [
+            TerrainZone("kabul_urban_basin", 255.0, 210.0, 290.0, 170.0, "urban", "Dense urban basin"),
+            TerrainZone("kabul_ridge_west", 85.0, 285.0, 630.0, 65.0, "ridge", "Mountain ridge line"),
+            TerrainZone("kabul_rf_shadow", 510.0, 115.0, 150.0, 210.0, "rf_shadow", "RF shadow"),
+        ]
+
+    if any(word in text for word in ["city", "urban", "dense", "buildings"]):
+        zones.append(TerrainZone("generated_urban", 250.0, 205.0, 300.0, 190.0, "urban", "Urban clutter"))
+    if any(word in text for word in ["mountain", "ridge", "valley", "hills"]):
+        zones.append(TerrainZone("generated_ridge", 110.0, 270.0, 580.0, 75.0, "ridge", "Terrain mask"))
+    if any(word in text for word in ["rf", "jam", "shadow", "dead zone", "canyon"]):
+        zones.append(TerrainZone("generated_rf_shadow", 470.0, 140.0, 180.0, 230.0, "rf_shadow", "RF shadow"))
+
+    return zones or TERRAIN_PRESETS["clear"]
 
 
 def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> DefenseAsset | None:
@@ -287,6 +352,12 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
             )
             for zone in TERRAIN_PRESETS[preset]
         ]
+        active_battles[session_id] = (state, strategy)
+        return
+
+    if message_type == "describe_terrain":
+        description = str(message.get("description") or "")
+        state.terrain_zones = terrain_from_description(description)
         active_battles[session_id] = (state, strategy)
         return
 

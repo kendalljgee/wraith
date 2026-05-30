@@ -18,6 +18,7 @@ type StateMessage = {
   defense_assets?: DefenseAsset[]
   defense_upgrades?: DefenseUpgrades
   terrain_zones?: TerrainZone[]
+  objective_reached?: boolean
 }
 
 type GenerationMessage = {
@@ -30,7 +31,11 @@ type HydrateMessage = {
   history: Generation[]
 }
 
-type BattleMessage = StateMessage | GenerationMessage | HydrateMessage
+type ResetMessage = {
+  type: 'reset'
+}
+
+type BattleMessage = StateMessage | GenerationMessage | HydrateMessage | ResetMessage
 
 type PlaceDefenseAssetCommand = {
   type: 'place_defense_asset'
@@ -65,6 +70,11 @@ type TerrainPresetCommand = {
   preset: string
 }
 
+type TerrainDescriptionCommand = {
+  type: 'describe_terrain'
+  description: string
+}
+
 function isCompletionGeneration(
   generation: GenerationMessage['generation'],
 ): generation is { type: 'complete'; generation: number } {
@@ -82,6 +92,7 @@ export function useBattleSocket(sessionId: string) {
     setDefenseUpgrades,
     setEvolutionComplete,
     setTerrainZones,
+    resetScenario,
   } = useStore()
 
   useEffect(() => {
@@ -100,13 +111,7 @@ export function useBattleSocket(sessionId: string) {
           if (msg.defense_assets) setDefenseAssets(msg.defense_assets)
           if (msg.defense_upgrades) setDefenseUpgrades(msg.defense_upgrades)
           if (msg.terrain_zones) setTerrainZones(msg.terrain_zones)
-          const alive = msg.drones.filter((d) => d.alive).length
-          const total = msg.drones.length
-          const penetration = 1 - alive / total
-          setThreatLevel(
-            penetration > 0.5 ? 'CRITICAL' :
-            penetration > 0.2 ? 'ELEVATED' : 'LOW'
-          )
+          setThreatLevel(computeThreatLevel(msg))
           return
         }
         case 'generation':
@@ -119,6 +124,9 @@ export function useBattleSocket(sessionId: string) {
         case 'hydrate':
           // Restore full history on reconnect
           msg.history.forEach((g) => addGeneration(g))
+          return
+        case 'reset':
+          resetScenario()
           return
       }
     }
@@ -137,6 +145,7 @@ export function useBattleSocket(sessionId: string) {
     setEvolutionComplete,
     setThreatLevel,
     setTerrainZones,
+    resetScenario,
     updateDrones,
   ])
 
@@ -166,5 +175,25 @@ export function useBattleSocket(sessionId: string) {
       ws.current.send(JSON.stringify({ type: 'set_terrain_preset', ...terrain }))
       return true
     },
+    describeTerrain: (terrain: Omit<TerrainDescriptionCommand, 'type'>) => {
+      if (ws.current?.readyState !== WebSocket.OPEN) return false
+      ws.current.send(JSON.stringify({ type: 'describe_terrain', ...terrain }))
+      return true
+    },
   }
+}
+
+function computeThreatLevel(msg: StateMessage) {
+  if (msg.objective_reached) return 'HIGH'
+
+  const alive = msg.drones.filter((drone) => drone.alive)
+  if (alive.length === 0) return 'LOW'
+
+  const closestToObjective = Math.min(
+    ...alive.map((drone) => Math.hypot(drone.x - 400, drone.y - 520)),
+  )
+
+  if (closestToObjective < 90) return 'HIGH'
+  if (closestToObjective < 220 || alive.length > 18) return 'MEDIUM'
+  return 'LOW'
 }

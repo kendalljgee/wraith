@@ -54,7 +54,7 @@ interface BattleState {
   defenseUpgrades: DefenseUpgrades
   terrainZones: TerrainZone[]
   generations: Generation[]
-  threatLevel: 'LOW' | 'ELEVATED' | 'CRITICAL'
+  threatLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   sessionId: string | null
   connected: boolean
   evolutionComplete: boolean
@@ -68,7 +68,9 @@ interface BattleState {
   incrementDefenseUpgrade: (upgrade: DefenseUpgrade) => void
   setTerrainZones: (zones: TerrainZone[]) => void
   addGeneration: (gen: Generation) => void
-  setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
+  clearGenerations: () => void
+  resetScenario: () => void
+  setThreatLevel: (level: 'LOW' | 'MEDIUM' | 'HIGH') => void
   setSession: (id: string) => void
   setConnected: (connected: boolean) => void
 }
@@ -108,6 +110,23 @@ export const useStore = create<BattleState>((set) => ({
   addGeneration: (gen) => set((s) => ({
     generations: [...s.generations.slice(-50), gen] // keep last 50
   })),
+  clearGenerations: () => set({
+    generations: [],
+    evolutionComplete: false,
+  }),
+  resetScenario: () => set({
+    drones: [],
+    defenseAssets: [],
+    defenseUpgrades: {
+      ew_range: 0,
+      interceptor_readiness: 0,
+      sensor_fusion: 0,
+    },
+    terrainZones: [],
+    generations: [],
+    threatLevel: 'LOW',
+    evolutionComplete: false,
+  }),
   setThreatLevel: (threatLevel) => set({ threatLevel }),
   setSession: (sessionId) => set({ sessionId }),
   setConnected: (connected) => set({ connected }),

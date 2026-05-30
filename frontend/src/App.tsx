@@ -62,12 +62,14 @@ export default function App() {
     removeDefenseAsset,
     incrementDefenseUpgrade,
     setTerrainZones,
+    resetScenario,
   } = useStore()
   const {
     placeDefenseAsset,
     moveDefenseAsset: sendMoveDefenseAsset,
     removeDefenseAsset: sendRemoveDefenseAsset,
     setTerrainPreset,
+    describeTerrain,
     upgradeDefense,
   } = useBattleSocket(SESSION_ID)
 
@@ -80,6 +82,7 @@ export default function App() {
   const [removeMode, setRemoveMode] = useState(false)
   const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
+  const [terrainPrompt, setTerrainPrompt] = useState('')
 
   const selectedSpec = customSpecs.find(spec => spec.id === selectedSpecId)
   const selectedTool = selectedSpec || ASSET_TOOLS.find(tool => tool.type === selectedAsset)!
@@ -91,18 +94,30 @@ export default function App() {
     setChallengeActive(true)
     setPaused(true)
     await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
+    await fetch(`${API_URL}/api/tournament/pause`, { method: 'POST' })
   }
 
   async function runDefense() {
     setChallengeActive(false)
     setPaused(false)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
+    await fetch(`${API_URL}/api/tournament/resume`, { method: 'POST' })
   }
 
   async function togglePause() {
     const nextPaused = !paused
     setPaused(nextPaused)
     await fetch(`${API_URL}/api/battle/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+    await fetch(`${API_URL}/api/tournament/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+  }
+
+  async function resetAll() {
+    setPaused(false)
+    setChallengeActive(false)
+    setRemoveMode(false)
+    setTerrainPrompt('')
+    resetScenario()
+    await fetch(`${API_URL}/api/system/reset`, { method: 'POST' })
   }
 
   function selectAssetTool(type: DefenseAssetType) {
@@ -142,6 +157,11 @@ export default function App() {
     setTerrainPreset({ preset })
   }
 
+  function applyTerrainPrompt() {
+    if (!terrainPrompt.trim()) return
+    describeTerrain({ description: terrainPrompt })
+  }
+
   return (
     <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-4">
       <div className="border border-wraith-border rounded p-3 mb-4 flex items-center justify-between">
@@ -158,6 +178,13 @@ export default function App() {
             className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 hover:border-slate-500 transition-colors"
           >
             {paused ? 'Resume' : 'Pause'}
+          </button>
+
+          <button
+            onClick={resetAll}
+            className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 hover:border-slate-500 transition-colors"
+          >
+            Reset
           </button>
 
           {challengeActive ? (
@@ -193,8 +220,8 @@ export default function App() {
         <div className="border border-wraith-border rounded p-3">
           <div className="text-slate-500 uppercase tracking-widest mb-1">Threat Level</div>
           <div className={`font-medium text-sm ${
-            threatLevel === 'CRITICAL' ? 'text-threat-critical' :
-            threatLevel === 'ELEVATED' ? 'text-threat-elevated' :
+            threatLevel === 'HIGH' ? 'text-threat-critical' :
+            threatLevel === 'MEDIUM' ? 'text-threat-elevated' :
             'text-threat-low'
           }`}>{threatLevel}</div>
         </div>
@@ -274,6 +301,21 @@ export default function App() {
               <option value="ridge">Ridge</option>
               <option value="rf_shadow">RF shadow</option>
             </select>
+            <input
+              value={terrainPrompt}
+              onChange={(event) => setTerrainPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') applyTerrainPrompt()
+              }}
+              placeholder="terrain like Kabul, Afghanistan"
+              className="w-56 text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300 placeholder:text-slate-600"
+            />
+            <button
+              onClick={applyTerrainPrompt}
+              className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 transition-colors"
+            >
+              Apply Terrain
+            </button>
             {UPGRADE_TOOLS.map(upgrade => (
               <button
                 key={upgrade.key}

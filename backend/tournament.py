@@ -99,8 +99,12 @@ class Tournament:
             if self.on_generation:
                 await self.on_generation(record)
 
-            # Pause between generations so the sim stays watchable
-            await asyncio.sleep(5)
+            # Pause between generations so the sim stays watchable.
+            # Check the pause flag frequently so the UI pause control feels immediate.
+            for _ in range(20):
+                if not self.running or self.paused:
+                    break
+                await asyncio.sleep(0.25)
 
         # Tournament finished (stopped or reached max generations)
         self.running = False
@@ -118,6 +122,14 @@ class Tournament:
 
     def stop(self):
         self.running = False
+
+    def reset_state(self):
+        self.running = False
+        self.paused = False
+        self.generation = 0
+        self.population = []
+        self.history = []
+        self.best = None
 
     def get_status(self) -> dict:
         return {
