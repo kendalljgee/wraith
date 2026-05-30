@@ -30,8 +30,11 @@ interface BattleState {
   costAttacker: number
   sessionId: string | null
   connected: boolean
+  evolutionComplete: boolean
+  setEvolutionComplete: (v: boolean) => void
   updateDrones: (drones: Drone[]) => void
   setDefenseAssets: (assets: any[]) => void
+  addDefenseAsset: (asset: any) => void
   addGeneration: (gen: Generation) => void
   setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
   updateCosts: (defender: number, attacker: number) => void
@@ -48,6 +51,7 @@ export const useStore = create<BattleState>((set) => ({
   costAttacker: 0,
   sessionId: null,
   connected: false,
+  evolutionComplete: false,
   updateDrones: (drones) => set({ drones }),
   setDefenseAssets: (defenseAssets) => set({ defenseAssets }),
   addGeneration: (gen) => set((s) => ({
@@ -57,4 +61,6 @@ export const useStore = create<BattleState>((set) => ({
   updateCosts: (costDefender, costAttacker) => set({ costDefender, costAttacker }),
   setSession: (sessionId) => set({ sessionId }),
   setConnected: (connected) => set({ connected }),
+  setEvolutionComplete: (v: boolean) => set({ evolutionComplete: v }),
+  addDefenseAsset: (asset) => set((s) => ({ defenseAssets: [...s.defenseAssets, asset] })),
 }))

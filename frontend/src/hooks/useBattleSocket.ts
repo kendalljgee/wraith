@@ -12,7 +12,9 @@ export function useBattleSocket(sessionId: string) {
     updateCosts,
     setConnected,
     setDefenseAssets,
+    setEvolutionComplete,
   } = useStore()
+  const costClearTimer = useRef<any>(null)
 
   useEffect(() => {
     if (!sessionId) return
@@ -28,7 +30,16 @@ export function useBattleSocket(sessionId: string) {
         case 'state':
           updateDrones(msg.drones)
           if (msg.defense_assets) setDefenseAssets(msg.defense_assets)
-          // Derive threat level from swarm penetration
+          if (msg.costs) {
+            updateCosts(msg.costs.defender, msg.costs.attacker)
+            // clear previous timer
+            if (costClearTimer.current) clearTimeout(costClearTimer.current)
+            // keep recent costs visible for 3s, then decay to zero
+            costClearTimer.current = setTimeout(() => {
+              updateCosts(0, 0)
+              costClearTimer.current = null
+            }, 3000)
+          }
           const alive = msg.drones.filter((d: any) => d.alive).length
           const total = msg.drones.length
           const penetration = 1 - alive / total
@@ -37,8 +48,19 @@ export function useBattleSocket(sessionId: string) {
             penetration > 0.2 ? 'ELEVATED' : 'LOW'
           )
           return
-        case 'generation': return addGeneration(msg.generation)
-        case 'costs':      return updateCosts(msg.defender, msg.attacker)
+        case 'generation':
+          if (msg.generation.type === 'complete') {
+            // show "Evolution complete" in the panel
+            setEvolutionComplete(true)
+            return
+          }
+          return addGeneration(msg.generation)
+        case 'hydrate':
+          // Restore full history on reconnect
+          msg.history.forEach((g: any) => addGeneration(g))
+          return
+        case 'costs':
+          return updateCosts(msg.defender, msg.attacker)
       }
     }
 

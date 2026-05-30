@@ -1,20 +1,72 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from swarm import make_battle, tick, serialize_state, DT
+from tournament import tournament
+from ai_client import complete
 import asyncio
+import json
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="WRAITH Backend")
+# ── LLM mutation callback ──────────────────────────────────
+
+async def llm_mutation_callback(best_strategy) -> dict:
+    summary = (
+        f"Generation {tournament.generation}. "
+        f"Best fitness: {best_strategy.fitness:.3f}. "
+        f"Current params: {json.dumps(best_strategy.params)}. "
+        f"Attack type: {best_strategy.params.get('type')}."
+    )
+    result = await complete(
+        prompt=(
+            f"{summary}\n\n"
+            f"You are an adversarial AI red team analyst optimizing a drone swarm attack. "
+            f"Based on the current fitness score and parameters, propose ONE specific parameter "
+            f"mutation that would make this attack more effective against a defended position. "
+            f"Valid params: type (direct/fragmentation/decoy), interceptor_cooldown (0.5-5.0), "
+            f"decoy_radius (50-250), decoy_x (0-800), decoy_y (0-600). "
+            f"Respond with JSON only, no markdown, no backticks: "
+            f"{{\"param\": \"...\", \"new_value\": ..., \"reasoning\": \"...\"}}"
+        ),
+        model_key="analyst",
+        max_tokens=200,
+    )
+    # Strip markdown fences if present
+    clean = result.strip().strip("```json").strip("```").strip()
+    return json.loads(clean)
+
+# ── broadcast helper ───────────────────────────────────────
+
+async def broadcast_generation(record: dict):
+    """Send generation update to all active battle sessions."""
+    for session_id in list(manager.active.keys()):
+        await manager.broadcast(session_id, {
+            "type": "generation",
+            "generation": record
+        })
+
+# ── lifespan: start tournament on boot ────────────────────
+
+@asynccontextmanager
+async def lifespan(app):
+    tournament.on_generation = broadcast_generation
+    asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
+    yield
+    tournament.stop()
+
+app = FastAPI(title="WRAITH Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── connection manager ─────────────────────────────────────
 
 class ConnectionManager:
     def __init__(self):
@@ -37,32 +89,86 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 active_battles: dict[str, tuple] = {}
+# Global pause flag (pauses all simulations when True)
+battle_paused: bool = False
+
+# ── routes ─────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
     return {"status": "operational", "system": "WRAITH"}
 
+@app.get("/api/tournament/status")
+async def tournament_status():
+    return tournament.get_status()
+
 @app.post("/api/battle/start")
 async def start_battle(n_drones: int = 30):
-    state, strategy = make_battle(n_drones=n_drones)
+    # Use current best strategy from tournament
+    params = tournament.best.params if tournament.best else None
+    state, strategy = make_battle(n_drones=n_drones, strategy_params=params)
     active_battles[state.session_id] = (state, strategy)
     return {"session_id": state.session_id}
+
+
+@app.post("/api/battle/pause")
+async def pause_battle():
+    global battle_paused
+    battle_paused = True
+    return {"status": "paused"}
+
+
+@app.post("/api/battle/resume")
+async def resume_battle():
+    global battle_paused
+    battle_paused = False
+    return {"status": "resumed"}
+
+
+@app.post("/api/tournament/pause")
+async def pause_tournament():
+    tournament.paused = True
+    return {"status": "tournament paused"}
+
+
+@app.post("/api/tournament/resume")
+async def resume_tournament():
+    tournament.paused = False
+    return {"status": "tournament resumed"}
 
 @app.websocket("/ws/battle/{session_id}")
 async def battle_ws(ws: WebSocket, session_id: str):
     await manager.connect(ws, session_id)
 
-    if session_id not in active_battles:
-        state, strategy = make_battle(session_id=session_id)
-        active_battles[session_id] = (state, strategy)
+    # Hydrate frontend with existing tournament history
+    await ws.send_json({
+        "type": "hydrate",
+        "history": tournament.history[-50:],
+        "generation": tournament.generation,
+    })
+
+    # Always start a fresh battle on new connection
+    params = tournament.best.params if tournament.best else None
+    state, strategy = make_battle(session_id=session_id, strategy_params=params)
+    active_battles[session_id] = (state, strategy)
 
     try:
         while True:
             state, strategy = active_battles[session_id]
 
-            if not state.terminal:
-                state = tick(state, strategy)
-                active_battles[session_id] = (state, strategy)
+            # If paused, do not advance simulation ticks. Still broadcast
+            # current state so clients know the simulation is paused.
+            if not battle_paused:
+                if not state.terminal:
+                    state = tick(state, strategy)
+                    active_battles[session_id] = (state, strategy)
+                else:
+                    params = tournament.best.params if tournament.best else None
+                    state, strategy = make_battle(
+                        session_id=session_id,
+                        strategy_params=params
+                    )
+                    active_battles[session_id] = (state, strategy)
 
             await manager.broadcast(session_id, serialize_state(state))
             await asyncio.sleep(DT)

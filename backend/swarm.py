@@ -198,12 +198,16 @@ def apply_swarm_attack(
         pass
 
 def tick(state: BattleState, strategy: AttackStrategy) -> BattleState:
-    # advance simulation one frame. returns updated state
     if state.terminal:
         return state
 
     state.tick += 1
     state.time_elapsed += DT
+
+    # Reset transient effects each tick
+    for drone in state.drones:
+        drone.jammed = False
+        drone.spoofed = False
 
     # Apply attacker tactics
     apply_swarm_attack(state.drones, strategy)
@@ -224,19 +228,16 @@ def tick(state: BattleState, strategy: AttackStrategy) -> BattleState:
     # Check terminal conditions
     alive = [d for d in state.drones if d.alive]
 
-    # Did any drone reach the objective?
     for drone in alive:
         if _dist(drone.x, drone.y, *drone.objective) < OBJECTIVE_REACH:
             state.objective_reached = True
             state.terminal = True
             return state
 
-    # All drones destroyed
     if not alive:
         state.terminal = True
         return state
 
-    # Time limit (30 seconds)
     if state.time_elapsed > 30.0:
         state.terminal = True
 
@@ -316,6 +317,9 @@ def make_battle(
     return state, strategy
 
 def serialize_state(state: BattleState) -> dict:
+    alive = sum(1 for d in state.drones if d.alive)
+    total = len(state.drones)
+    disabled = total - alive
     # convert BattleState to JSON-serializable dict for WebSocket broadcast
     return {
         "type": "state",
@@ -324,6 +328,10 @@ def serialize_state(state: BattleState) -> dict:
         "terminal": state.terminal,
         "objective_reached": state.objective_reached,
         "drones_disabled": state.drones_disabled,
+        "costs": {
+            "attacker": disabled * 500,       # $500 per drone lost
+            "defender": disabled * 150000,    # $150K per interceptor use
+        },
         "drones": [
             {
                 "id": d.id,

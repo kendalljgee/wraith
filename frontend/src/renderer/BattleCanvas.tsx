@@ -6,29 +6,53 @@ import type { Drone } from '../store/battleStore'
 const WIDTH = 800
 const HEIGHT = 600
 
-export default function BattleCanvas() {
+interface BattleCanvasProps {
+  mode?: 'challenge' | 'spectator' | 'edit' | string
+  onPlaceAsset?: (asset: { x: number; y: number; type?: string }) => void
+  selectedAsset?: string
+}
+
+export default function BattleCanvas({
+  mode = 'spectator',
+  onPlaceAsset,
+  selectedAsset,
+}: BattleCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<PIXI.Application | null>(null)
   const droneSprites = useRef<Map<string, PIXI.Container>>(new Map())
   const commsLayer = useRef<PIXI.Graphics | null>(null)
   const defenseLayer = useRef<PIXI.Graphics | null>(null)
+
+  // refs to avoid stale closures in the Pixi event handler
+  const modeRef = useRef<string>(mode)
+  const onPlaceAssetRef = useRef<typeof onPlaceAsset | null>(onPlaceAsset || null)
+  const selectedAssetRef = useRef<string | undefined>(selectedAsset)
+  const pointerHandlerRef = useRef<any>(null)
+
   const drones = useStore(s => s.drones)
   const defenseAssets = useStore((s: any) => s.defenseAssets || [])
+
+  // keep refs up-to-date
+  useEffect(() => {
+    modeRef.current = mode
+    onPlaceAssetRef.current = onPlaceAsset || null
+    selectedAssetRef.current = selectedAsset
+  }, [mode, onPlaceAsset, selectedAsset])
 
   // Initialize PixiJS once
   useEffect(() => {
     if (!canvasRef.current || appRef.current) return
 
     const app = new PIXI.Application()
-
+    // Initialize the renderer — app.canvas becomes available after init() completes
     app.init({
       width: WIDTH,
       height: HEIGHT,
       backgroundColor: 0x080c10,
       antialias: true,
     }).then(() => {
-      if (!canvasRef.current) return
-      canvasRef.current.appendChild(app.canvas)
+      // Use app.canvas (preferred) rather than deprecated app.view
+      canvasRef.current!.appendChild(app.canvas as HTMLCanvasElement)
       appRef.current = app
 
       // Layer order: defense → comms → drones
@@ -58,9 +82,28 @@ export default function BattleCanvas() {
       obj.moveTo(400, 510).lineTo(400, 530)
       obj.stroke({ color: 0xef4444, width: 1, alpha: 0.6 })
       app.stage.addChild(obj)
+
+      // Add onClick handler to the PixiJS canvas
+      // Use eventMode static so stage receives pointer events
+      // (use loose any types for interaction event to avoid PIXI typing issues)
+      app.stage.eventMode = 'static'
+      const pointerDownHandler = (e: any) => {
+        const pos = e?.data?.global || e?.global
+        if (!pos) return
+        // Only call when in challenge mode
+        if (modeRef.current !== 'challenge') return
+        onPlaceAssetRef.current?.({ x: pos.x, y: pos.y, type: selectedAssetRef.current })
+      }
+      pointerHandlerRef.current = pointerDownHandler
+      app.stage.on('pointerdown', pointerDownHandler)
     })
 
     return () => {
+      // Remove pointer handler if present
+      try {
+        if (pointerHandlerRef.current) app.stage.off('pointerdown', pointerHandlerRef.current)
+        pointerHandlerRef.current = null
+      } catch (e) {}
       app.destroy(true)
       appRef.current = null
       droneSprites.current.clear()
@@ -86,7 +129,7 @@ export default function BattleCanvas() {
 
         // Status dot (jammed/spoofed indicator)
         const dot = new PIXI.Graphics()
-        dot.label = 'status'
+        ;(dot as any).label = 'status'
         container.addChild(dot)
 
         stage.addChild(container)
@@ -130,7 +173,7 @@ export default function BattleCanvas() {
     })
 
     // ── comms lines ────────────────────────────────────────
-    const cLayer = commsLayer.current
+    const cLayer = commsLayer.current!
     cLayer.clear()
     drones.forEach(drone => {
       if (!drone.alive || drone.jammed) return

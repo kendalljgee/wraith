@@ -15,18 +15,17 @@ HEADERS = {
     "X-Title": "WRAITH"
 }
 
-# model aliases
 MODELS = {
-    "analyst":     "anthropic/claude-sonnet-4-5",   # briefs, debriefs
-    "fast":        "google/gemini-2.0-flash-001",    # consequence gen, live events
-    "optimizer":   "mistralai/mistral-7b-instruct",  # OPFOR reasoning, mutation
+    "analyst":   "anthropic/claude-sonnet-4-5",
+    "fast":      "google/gemini-2.0-flash-001",
+    "optimizer": "mistralai/mistral-7b-instruct",
 }
 
 async def complete(
     prompt: str,
     model_key: str = "fast",
     max_tokens: int = 500,
-    json_mode: bool = False
+    json_mode: bool = False      # kept for compatibility but handled differently
 ) -> str:
     model = MODELS[model_key]
     payload = {
@@ -34,13 +33,17 @@ async def complete(
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}]
     }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
 
     async with aiohttp.ClientSession() as session:
         async with session.post(BASE_URL, headers=HEADERS, json=payload) as resp:
             data = await resp.json()
-            return data["choices"][0]["message"]["content"]
+            print(f"[LLM] status: {resp.status}, model: {model}")
+            if "error" in data:
+                print(f"[LLM] error from API: {data['error']}")
+                raise ValueError(data["error"])
+            content = data["choices"][0]["message"]["content"]
+            print(f"[LLM] raw: {content[:200]}")
+            return content
 
 async def complete_system(
     system: str,
@@ -61,4 +64,6 @@ async def complete_system(
     async with aiohttp.ClientSession() as session:
         async with session.post(BASE_URL, headers=HEADERS, json=payload) as resp:
             data = await resp.json()
+            if "error" in data:
+                raise ValueError(data["error"])
             return data["choices"][0]["message"]["content"]
