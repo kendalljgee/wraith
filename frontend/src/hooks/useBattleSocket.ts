@@ -10,7 +10,8 @@ export function useBattleSocket(sessionId: string) {
     addGeneration,
     setThreatLevel,
     updateCosts,
-    setConnected
+    setConnected,
+    setDefenseAssets,
   } = useStore()
 
   useEffect(() => {
@@ -24,9 +25,19 @@ export function useBattleSocket(sessionId: string) {
     ws.current.onmessage = (e) => {
       const msg = JSON.parse(e.data)
       switch (msg.type) {
-        case 'state':      return updateDrones(msg.drones)
+        case 'state':
+          updateDrones(msg.drones)
+          if (msg.defense_assets) setDefenseAssets(msg.defense_assets)
+          // Derive threat level from swarm penetration
+          const alive = msg.drones.filter((d: any) => d.alive).length
+          const total = msg.drones.length
+          const penetration = 1 - alive / total
+          setThreatLevel(
+            penetration > 0.5 ? 'CRITICAL' :
+            penetration > 0.2 ? 'ELEVATED' : 'LOW'
+          )
+          return
         case 'generation': return addGeneration(msg.generation)
-        case 'threat':     return setThreatLevel(msg.level)
         case 'costs':      return updateCosts(msg.defender, msg.attacker)
       }
     }

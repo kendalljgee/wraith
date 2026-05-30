@@ -9,6 +9,8 @@ export interface Drone {
   alive: boolean
   team: 'red' | 'blue'
   comms_links: string[]
+  jammed: boolean
+  spoofed: boolean
 }
 
 export interface Generation {
@@ -21,6 +23,7 @@ export interface Generation {
 
 interface BattleState {
   drones: Drone[]
+  defenseAssets: any[]
   generations: Generation[]
   threatLevel: 'LOW' | 'ELEVATED' | 'CRITICAL'
   costDefender: number
@@ -28,6 +31,7 @@ interface BattleState {
   sessionId: string | null
   connected: boolean
   updateDrones: (drones: Drone[]) => void
+  setDefenseAssets: (assets: any[]) => void
   addGeneration: (gen: Generation) => void
   setThreatLevel: (level: 'LOW' | 'ELEVATED' | 'CRITICAL') => void
   updateCosts: (defender: number, attacker: number) => void
@@ -37,6 +41,7 @@ interface BattleState {
 
 export const useStore = create<BattleState>((set) => ({
   drones: [],
+  defenseAssets: [],
   generations: [],
   threatLevel: 'LOW',
   costDefender: 0,
@@ -44,6 +49,7 @@ export const useStore = create<BattleState>((set) => ({
   sessionId: null,
   connected: false,
   updateDrones: (drones) => set({ drones }),
+  setDefenseAssets: (defenseAssets) => set({ defenseAssets }),
   addGeneration: (gen) => set((s) => ({
     generations: [...s.generations.slice(-50), gen] // keep last 50
   })),
