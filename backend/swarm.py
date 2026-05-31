@@ -157,7 +157,7 @@ def apply_attacks(
                 if not drone.alive:
                     continue
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
-                drone.jammed = d < effective_radius
+                drone.jammed = drone.jammed or d < effective_radius
 
         elif asset.asset_type == "interceptor":
             # Kill drones inside radius (with cooldown)
@@ -181,7 +181,7 @@ def apply_attacks(
                 if not drone.alive:
                     continue
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
-                drone.spoofed = d < effective_radius
+                drone.spoofed = drone.spoofed or d < effective_radius
 
 def apply_terrain_effects(drones: list[Drone], terrain_zones: list[TerrainZone]) -> None:
     for drone in drones:
