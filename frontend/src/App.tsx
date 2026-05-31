@@ -7,6 +7,7 @@ import type { DefenseAssetType } from './store/battleStore'
 
 const SESSION_ID = 'dev-session-001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 
 const ASSET_TOOLS: Array<{
   type: DefenseAssetType
@@ -51,6 +52,8 @@ export default function App() {
     connected,
     drones,
     defenseAssets,
+    battleDebrief,
+    setBattleDebrief,
     addDefenseAsset,
     moveDefenseAsset,
     removeDefenseAsset,
@@ -61,15 +64,17 @@ export default function App() {
     moveDefenseAsset: sendMoveDefenseAsset,
     removeDefenseAsset: sendRemoveDefenseAsset,
     describeTerrain,
+    setSpeed: sendSpeed,
   } = useBattleSocket(SESSION_ID)
 
   const active = drones.filter(d => d.alive && !d.jammed && !d.spoofed).length
   const disabled = drones.filter(d => !d.alive || d.jammed || d.spoofed).length
   const total = drones.length
-  const [challengeActive, setChallengeActive] = useState(false)
+  const [challengeActive, setChallengeActive] = useState(true)
   const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
-  const [paused, setPaused] = useState(false)
+  const [paused, setPaused] = useState(true)
   const [removeMode, setRemoveMode] = useState(false)
+  const [battleSpeed, setBattleSpeed] = useState(1)
   const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
   const [terrainPrompt, setTerrainPrompt] = useState('')
@@ -95,6 +100,7 @@ export default function App() {
   async function runDefense() {
     setChallengeActive(false)
     setPaused(false)
+    setBattleDebrief(null)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
     await fetch(`${API_URL}/api/tournament/restart`, { method: 'POST' })
   }
@@ -107,12 +113,18 @@ export default function App() {
   }
 
   async function resetAll() {
-    setPaused(false)
-    setChallengeActive(false)
+    setPaused(true)
+    setChallengeActive(true)
     setRemoveMode(false)
     setTerrainPrompt('')
     resetScenario()
     await fetch(`${API_URL}/api/system/reset`, { method: 'POST' })
+  }
+
+  async function updateBattleSpeed(speed: number) {
+    setBattleSpeed(speed)
+    sendSpeed({ speed })
+    await fetch(`${API_URL}/api/battle/speed?speed=${speed}`, { method: 'POST' })
   }
 
   function selectAssetTool(type: DefenseAssetType) {
@@ -195,6 +207,16 @@ export default function App() {
           >
             {paused ? 'Resume' : 'Pause'}
           </button>
+
+          <select
+            value={battleSpeed}
+            onChange={(event) => void updateBattleSpeed(Number(event.target.value))}
+            className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-400"
+          >
+            {SPEED_OPTIONS.map(speed => (
+              <option key={speed} value={speed}>{speed}x</option>
+            ))}
+          </select>
 
           <button
             onClick={resetAll}
@@ -427,6 +449,12 @@ export default function App() {
 
         <div className="flex-1" style={{ height: '600px' }}>
           <EvolutionPanel challengeActive={challengeActive} />
+          {battleDebrief && (
+            <div className="mt-3 border border-wraith-border rounded p-3 text-xs text-slate-300 max-h-48 overflow-y-auto whitespace-pre-wrap">
+              <div className="text-slate-500 uppercase tracking-widest mb-2">Battle Debrief</div>
+              {battleDebrief}
+            </div>
+          )}
         </div>
       </div>
     </div>

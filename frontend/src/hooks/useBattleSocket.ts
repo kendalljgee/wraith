@@ -33,7 +33,12 @@ type ResetMessage = {
   type: 'reset'
 }
 
-type BattleMessage = StateMessage | GenerationMessage | HydrateMessage | ResetMessage
+type DebriefMessage = {
+  type: 'debrief'
+  debrief: string
+}
+
+type BattleMessage = StateMessage | GenerationMessage | HydrateMessage | ResetMessage | DebriefMessage
 
 type PlaceDefenseAssetCommand = {
   type: 'place_defense_asset'
@@ -69,6 +74,11 @@ type TerrainDescriptionCommand = {
   description: string
 }
 
+type SpeedCommand = {
+  type: 'set_speed'
+  speed: number
+}
+
 function isCompletionGeneration(
   generation: GenerationMessage['generation'],
 ): generation is { type: 'complete'; generation: number } {
@@ -86,6 +96,7 @@ export function useBattleSocket(sessionId: string) {
     setEvolutionComplete,
     setTerrainZones,
     clearGenerations,
+    setBattleDebrief,
     resetScenario,
   } = useStore()
 
@@ -127,6 +138,9 @@ export function useBattleSocket(sessionId: string) {
         case 'reset':
           resetScenario()
           return
+        case 'debrief':
+          setBattleDebrief(msg.debrief)
+          return
       }
     }
 
@@ -140,6 +154,7 @@ export function useBattleSocket(sessionId: string) {
     sessionId,
     setConnected,
     clearGenerations,
+    setBattleDebrief,
     setDefenseAssets,
     setEvolutionComplete,
     setThreatLevel,
@@ -172,6 +187,11 @@ export function useBattleSocket(sessionId: string) {
     describeTerrain: (terrain: Omit<TerrainDescriptionCommand, 'type'>) => {
       if (ws.current?.readyState !== WebSocket.OPEN) return false
       ws.current.send(JSON.stringify({ type: 'describe_terrain', ...terrain }))
+      return true
+    },
+    setSpeed: (speed: Omit<SpeedCommand, 'type'>) => {
+      if (ws.current?.readyState !== WebSocket.OPEN) return false
+      ws.current.send(JSON.stringify({ type: 'set_speed', ...speed }))
       return true
     },
   }

@@ -52,6 +52,7 @@ interface BattleState {
   defenseAssets: DefenseAsset[]
   terrainZones: TerrainZone[]
   generations: Generation[]
+  battleDebrief: string | null
   threatLevel: ThreatLevel
   sessionId: string | null
   connected: boolean
@@ -65,6 +66,7 @@ interface BattleState {
   setTerrainZones: (zones: TerrainZone[]) => void
   addGeneration: (gen: Generation) => void
   clearGenerations: () => void
+  setBattleDebrief: (debrief: string | null) => void
   resetScenario: () => void
   setThreatLevel: (level: ThreatLevel) => void
   setSession: (id: string) => void
@@ -76,6 +78,7 @@ export const useStore = create<BattleState>((set) => ({
   defenseAssets: [],
   terrainZones: [],
   generations: [],
+  battleDebrief: null,
   threatLevel: 'STANDOFF',
   sessionId: null,
   connected: false,
@@ -98,11 +101,13 @@ export const useStore = create<BattleState>((set) => ({
     generations: [],
     evolutionComplete: false,
   }),
+  setBattleDebrief: (battleDebrief) => set({ battleDebrief }),
   resetScenario: () => set({
     drones: [],
     defenseAssets: [],
     terrainZones: [],
     generations: [],
+    battleDebrief: null,
     threatLevel: 'STANDOFF',
     evolutionComplete: false,
   }),

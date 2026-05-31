@@ -1,0 +1,27 @@
+[
+  {
+    "id": "wraith-ew-compact-120",
+    "name": "WRAITH Compact EW Pod",
+    "type": "jammer",
+    "radius": 145,
+    "effectiveness": 0.88,
+    "latency_ms": 180
+  },
+  {
+    "id": "skyguard-kinetic-70",
+    "name": "SkyGuard Kinetic Interceptor",
+    "type": "interceptor",
+    "range_m": 85,
+    "reload_s": 1.4,
+    "pk": 0.74,
+    "latency_ms": 320
+  },
+  {
+    "id": "mirage-gnss-spoofer-160",
+    "name": "Mirage GNSS Spoofer",
+    "type": "spoofer",
+    "radius": 170,
+    "effectiveness": 0.79,
+    "latency_ms": 220
+  }
+]

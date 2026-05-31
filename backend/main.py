@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 tournament_task: asyncio.Task | None = None
+simulation_speed: float = 1.0
 
 # ── LLM mutation callback ──────────────────────────────────
 
@@ -55,9 +56,9 @@ async def broadcast_generation(record: dict):
 
 @asynccontextmanager
 async def lifespan(app):
-    global tournament_task
+    global battle_paused
+    battle_paused = True
     tournament.on_generation = broadcast_generation
-    tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
     yield
     tournament.stop()
     if tournament_task:
@@ -101,7 +102,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 active_battles: dict[str, tuple] = {}
 # Global pause flag (pauses all simulations when True)
-battle_paused: bool = False
+battle_paused: bool = True
 
 ASSET_RADII = {
     "jammer": 110.0,
@@ -154,6 +155,13 @@ async def resume_battle():
     return {"status": "resumed"}
 
 
+@app.post("/api/battle/speed")
+async def set_battle_speed(speed: float):
+    global simulation_speed
+    simulation_speed = clamp(speed, 0.25, 2.0)
+    return {"status": "speed updated", "speed": simulation_speed}
+
+
 @app.post("/api/tournament/pause")
 async def pause_tournament():
     tournament.paused = True
@@ -181,7 +189,7 @@ async def reset_system():
 
 async def reset_all_state():
     global battle_paused, tournament_task
-    battle_paused = False
+    battle_paused = True
 
     if tournament_task:
         tournament.stop()
@@ -193,7 +201,6 @@ async def reset_all_state():
 
     tournament.reset_state()
     tournament.on_generation = broadcast_generation
-    tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
 
     for session_id in list(active_battles.keys()):
         params = tournament.best.params if tournament.best else None
@@ -359,7 +366,69 @@ def make_manual_asset(payload: dict) -> DefenseAsset | None:
     )
 
 
+async def generate_debrief(state, strategy) -> str:
+    summary = {
+        "result": "breach" if state.objective_reached else "defense_success",
+        "time_elapsed_seconds": round(state.time_elapsed, 1),
+        "drones_total": len(state.drones),
+        "drones_destroyed": sum(1 for drone in state.drones if not drone.alive),
+        "drones_disrupted": sum(1 for drone in state.drones if drone.alive and (drone.jammed or drone.spoofed)),
+        "defense_assets": [
+            {
+                "name": asset.name or asset.asset_type,
+                "type": asset.asset_type,
+                "x_m": round(asset.x, 1),
+                "y_m": round(asset.y, 1),
+                "range_m": round(asset.radius, 1),
+                "reload_s": round(asset.reload_time, 2),
+                "effectiveness": round(asset.effectiveness, 2),
+            }
+            for asset in state.defense_assets
+        ],
+        "terrain": [
+            {
+                "label": zone.label,
+                "type": zone.terrain_type,
+                "x_m": round(zone.x, 1),
+                "y_m": round(zone.y, 1),
+                "width_m": round(zone.width, 1),
+                "height_m": round(zone.height, 1),
+            }
+            for zone in state.terrain_zones
+        ],
+        "attacker_strategy": strategy.params,
+    }
+    try:
+        return await complete_system(
+            system=(
+                "You are WRAITH's battle debrief analyst. Produce a concise operational debrief "
+                "for a drone defense simulation. Include: outcome, terrain effects, asset placement "
+                "assessment using meter coordinates, what worked, vulnerabilities, and next test recommendations. "
+                "Do not invent weapon models beyond the provided assets."
+            ),
+            user=json.dumps(summary),
+            model_key="analyst",
+            max_tokens=700,
+        )
+    except Exception as e:
+        print(f"Debrief generation failed, using fallback: {e}")
+        outcome = "Attack reached the objective." if state.objective_reached else "Defense prevented objective breach."
+        assets = ", ".join(
+            f"{asset.name or asset.asset_type} at ({asset.x:.0f}m,{asset.y:.0f}m)"
+            for asset in state.defense_assets
+        ) or "No user-added assets"
+        terrain = ", ".join(zone.label for zone in state.terrain_zones) or "No terrain overlays"
+        return (
+            f"{outcome} Engagement lasted {state.time_elapsed:.1f}s. "
+            f"Destroyed drones: {summary['drones_destroyed']}/{summary['drones_total']}; "
+            f"currently disrupted: {summary['drones_disrupted']}. "
+            f"Assets: {assets}. Terrain: {terrain}. "
+            "Next test: vary asset spacing around the objective and compare layered jammer/spoofer coverage against interceptor-only defense."
+        )
+
+
 async def handle_battle_command(session_id: str, message: dict) -> None:
+    global simulation_speed
     battle = active_battles.get(session_id)
     if not battle:
         return
@@ -425,6 +494,12 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
         active_battles[session_id] = (state, strategy)
         return
 
+    if message_type == "set_speed":
+        try:
+            simulation_speed = clamp(float(message.get("speed")), 0.25, 2.0)
+        except (TypeError, ValueError):
+            return
+
 
 async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:
     while True:
@@ -433,7 +508,6 @@ async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:
 @app.websocket("/ws/battle/{session_id}")
 async def battle_ws(ws: WebSocket, session_id: str):
     await manager.connect(ws, session_id)
-    await ensure_tournament_running()
 
     # Hydrate frontend with existing tournament history
     await ws.send_json({
@@ -448,6 +522,7 @@ async def battle_ws(ws: WebSocket, session_id: str):
     active_battles[session_id] = (state, strategy)
     commands: asyncio.Queue = asyncio.Queue()
     command_reader = asyncio.create_task(receive_battle_commands(ws, commands))
+    debrief_sent = False
 
     try:
         while True:
@@ -465,22 +540,19 @@ async def battle_ws(ws: WebSocket, session_id: str):
             # current state so clients know the simulation is paused.
             if not battle_paused:
                 if not state.terminal:
+                    debrief_sent = False
                     state = tick(state, strategy)
                     active_battles[session_id] = (state, strategy)
-                else:
-                    params = tournament.best.params if tournament.best else None
-                    persistent_assets = state.defense_assets
-                    persistent_terrain = state.terrain_zones
-                    state, strategy = make_battle(
-                        session_id=session_id,
-                        strategy_params=params,
-                        defense_assets=persistent_assets,
-                        terrain_zones=persistent_terrain,
-                    )
-                    active_battles[session_id] = (state, strategy)
+                elif not debrief_sent:
+                    debrief_sent = True
+                    debrief = await generate_debrief(state, strategy)
+                    await manager.broadcast(session_id, {
+                        "type": "debrief",
+                        "debrief": debrief,
+                    })
 
             await manager.broadcast(session_id, serialize_state(state))
-            await asyncio.sleep(DT)
+            await asyncio.sleep(DT / simulation_speed)
 
     except WebSocketDisconnect:
         manager.disconnect(ws, session_id)
