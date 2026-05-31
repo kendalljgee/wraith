@@ -8,6 +8,12 @@ import type { DefenseAssetType } from './store/battleStore'
 const SESSION_ID = 'dev-session-001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+const TERRAIN_PROMPTS = [
+  'dense coastal city with a river corridor',
+  'mountain valley with RF shadow zones',
+  'open desert basin with low-rise urban grid',
+  'industrial port with water approaches',
+]
 
 const ASSET_TOOLS: Array<{
   type: DefenseAssetType
@@ -71,10 +77,12 @@ export default function App() {
   const disabled = drones.filter(d => !d.alive || d.jammed || d.spoofed).length
   const total = drones.length
   const [challengeActive, setChallengeActive] = useState(true)
+  const [page, setPage] = useState<'landing' | 'simulation' | 'debrief'>('landing')
   const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
   const [paused, setPaused] = useState(true)
   const [removeMode, setRemoveMode] = useState(false)
   const [battleSpeed, setBattleSpeed] = useState(1)
+  const [debriefPromptDismissed, setDebriefPromptDismissed] = useState(false)
   const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
   const [terrainPrompt, setTerrainPrompt] = useState('')
@@ -101,6 +109,7 @@ export default function App() {
     setChallengeActive(false)
     setPaused(false)
     setBattleDebrief(null)
+    setDebriefPromptDismissed(false)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
     await fetch(`${API_URL}/api/tournament/restart?session_id=${SESSION_ID}`, { method: 'POST' })
   }
@@ -116,9 +125,28 @@ export default function App() {
     setPaused(true)
     setChallengeActive(true)
     setRemoveMode(false)
+    setDebriefPromptDismissed(false)
     setTerrainPrompt('')
     resetScenario()
     await fetch(`${API_URL}/api/system/reset`, { method: 'POST' })
+  }
+
+  async function startSimulation() {
+    await resetAll()
+    setPage('simulation')
+  }
+
+  async function goHome() {
+    setPage('landing')
+    setPaused(true)
+    setChallengeActive(true)
+    await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
+    await fetch(`${API_URL}/api/tournament/pause`, { method: 'POST' })
+  }
+
+  async function returnToResetSimulation() {
+    await resetAll()
+    setPage('simulation')
   }
 
   async function updateBattleSpeed(speed: number) {
@@ -190,14 +218,175 @@ export default function App() {
     describeTerrain({ description: terrainPrompt })
   }
 
+  if (page === 'landing') {
+    return (
+      <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-6">
+        <main className="mx-auto max-w-6xl">
+          <section className="min-h-[calc(100vh-48px)] flex flex-col justify-center">
+            <div className="mb-8">
+              <div className="text-xs text-slate-500 uppercase tracking-[0.35em] mb-3">
+                Autonomous Red Team System
+              </div>
+              <h1 className="text-6xl md:text-7xl font-semibold text-slate-50 tracking-normal">WRAITH</h1>
+              <p className="text-2xl md:text-3xl text-slate-300 mt-4 max-w-4xl leading-tight">
+                Test how layered counter-drone assets perform against evolving attacker swarm tactics.
+              </p>
+            </div>
+
+            <div className="grid lg:grid-cols-[1.15fr_0.85fr] gap-5">
+              <div className="border border-wraith-border rounded p-5">
+                <div className="grid md:grid-cols-2 gap-4 text-sm">
+                  <InstructionBlock title="1. Build The Defense">
+                    Pick Jammer, Interceptor, or Spoofer. Hover over the map to preview its range, click to place it, then drag from the center dot to reposition. Use Remove, then click an asset center, to delete it.
+                  </InstructionBlock>
+                  <InstructionBlock title="2. Tune Asset Specs">
+                    Range is meters of coverage. Reload is seconds between interceptor shots. Effect is probability or EW reliability from 0 to 1. Latency is response delay metadata for imported assets.
+                  </InstructionBlock>
+                  <InstructionBlock title="3. Generate Terrain">
+                    Type natural-language terrain or a location. The backend generates tactical zones such as urban clutter, ridgelines, RF shadows, desert basins, and water approaches.
+                  </InstructionBlock>
+                  <InstructionBlock title="4. Run The Battle">
+                    Click Run Defense after placing assets. The attack ends when the swarm breaches the objective, times out, is destroyed, or all surviving drones are jammed/spoofed.
+                  </InstructionBlock>
+                </div>
+
+                <div className="mt-5 grid md:grid-cols-3 gap-3 text-xs">
+                  <VisualKey color="bg-amber-400" label="Jammer" detail="Severs comms inside range." />
+                  <VisualKey color="bg-red-400" label="Interceptor" detail="Destroys drones inside range." />
+                  <VisualKey color="bg-purple-400" label="Spoofer" detail="Redirects drone navigation." />
+                </div>
+
+                <div className="mt-5 border border-wraith-border rounded p-3">
+                  <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Sample Terrain Prompts</div>
+                  <div className="grid md:grid-cols-2 gap-2">
+                    {TERRAIN_PROMPTS.map(prompt => (
+                      <div key={prompt} className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-300">
+                        {prompt}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-wraith-border rounded p-5">
+                <div className="h-56 rounded border border-wraith-border relative overflow-hidden bg-[#080c10]">
+                  <div className="absolute inset-0 opacity-70" style={{
+                    backgroundImage: 'linear-gradient(#203246 1px, transparent 1px), linear-gradient(90deg, #203246 1px, transparent 1px)',
+                    backgroundSize: '64px 48px',
+                  }} />
+                  <div className="absolute left-[18%] top-[28%] w-28 h-20 border border-slate-400/70 bg-slate-500/20" />
+                  <div className="absolute left-[58%] top-[50%] w-32 h-24 border border-slate-400/70 bg-slate-500/20" />
+                  <div className="absolute left-[10%] top-[60%] w-36 h-36 rounded-full border-2 border-amber-400/80" />
+                  <div className="absolute left-[56%] top-[18%] w-32 h-32 rounded-full border-2 border-purple-400/80" />
+                  <div className="absolute left-[34%] top-[36%] w-24 h-24 rounded-full border-2 border-red-400/80" />
+                  <div className="absolute left-[68%] top-[18%] text-red-400">▲</div>
+                  <div className="absolute left-[73%] top-[26%] text-amber-400">▲</div>
+                  <div className="absolute left-[64%] top-[35%] text-purple-400">▲</div>
+                  <div className="absolute left-[40%] top-[78%] text-red-500 text-2xl">⊕</div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Imported Assets</div>
+                  {customSpecs.length > 0 ? (
+                    <div className="space-y-2">
+                      {customSpecs.map(spec => (
+                        <div key={spec.id} className="border border-wraith-border rounded px-3 py-2 text-xs flex items-center justify-between gap-3">
+                          <span className="text-slate-200">{spec.name}</span>
+                          <span className="text-slate-500">{spec.type} · {spec.radius}m</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-600 border border-wraith-border rounded px-3 py-3">
+                      No custom asset specs imported yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-7 flex items-center justify-center gap-3">
+              <button
+                onClick={() => void startSimulation()}
+                className="text-sm bg-threat-low text-wraith-bg border border-threat-low rounded px-5 py-2 hover:bg-slate-100 hover:border-slate-100 transition-colors"
+              >
+                Start Simulation
+              </button>
+              <div className="flex items-center gap-2">
+                <label className="text-sm border border-wraith-border rounded px-5 py-2 text-slate-300 hover:text-slate-100 hover:border-slate-500 transition-colors cursor-pointer">
+                  Import Custom Specs
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(event) => {
+                      void importAssetSpecs(event.target.files?.[0] || null)
+                      event.currentTarget.value = ''
+                    }}
+                  />
+                </label>
+                <div className="relative group">
+                  <div className="w-6 h-6 rounded-full border border-wraith-border text-slate-400 flex items-center justify-center text-xs">i</div>
+                  <div className="hidden group-hover:block absolute bottom-8 right-0 w-80 border border-wraith-border rounded bg-wraith-bg p-3 text-xs text-slate-300 z-10">
+                    Import a JSON array. Each item needs name, type: jammer/interceptor/spoofer, and radius or range_m. Optional fields: reload_time or reload_s, effectiveness or pk, latency_ms.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    )
+  }
+
+  if (page === 'debrief') {
+    return (
+      <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-4">
+        <button
+          onClick={() => void goHome()}
+          className="mb-4 text-xs border border-wraith-border rounded px-3 py-2 text-slate-400 hover:text-slate-100"
+        >
+          Home
+        </button>
+        <div className="mx-auto max-w-6xl grid lg:grid-cols-[0.9fr_1.1fr] gap-5">
+          <div className="border border-wraith-border rounded p-4">
+            <div className="text-xs uppercase tracking-widest text-slate-500 mb-3">Defense Layout</div>
+            <DefenseLayoutPreview assets={defenseAssets} />
+          </div>
+          <div className="border border-wraith-border rounded p-5">
+            <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">AI Battle Debrief</div>
+            <h1 className="text-3xl text-slate-50 mb-4">Engagement Summary</h1>
+            <div className="text-sm leading-6 text-slate-300 whitespace-pre-wrap break-words">
+              {battleDebrief || 'No debrief is available yet.'}
+            </div>
+            <button
+              onClick={() => void returnToResetSimulation()}
+              className="mt-6 text-sm bg-threat-low text-wraith-bg border border-threat-low rounded px-5 py-2 hover:bg-slate-100 hover:border-slate-100 transition-colors"
+            >
+              Return To Reset Simulation
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-4">
       <div className="border border-wraith-border rounded p-3 mb-4 flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void goHome()}
+            className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 hover:border-slate-500 transition-colors"
+          >
+            Home
+          </button>
+          <div>
           <span className="text-xs text-slate-500 uppercase tracking-widest">
             Autonomous Red Team System
           </span>
           <h1 className="text-lg font-medium text-slate-100 mt-0.5">WRAITH</h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -449,14 +638,97 @@ export default function App() {
 
         <div className="flex-1 min-w-0" style={{ height: '600px' }}>
           <EvolutionPanel challengeActive={challengeActive} />
-          {battleDebrief && (
-            <div className="mt-3 border border-wraith-border rounded p-3 text-xs text-slate-300 max-h-48 overflow-y-auto whitespace-pre-wrap">
-              <div className="text-slate-500 uppercase tracking-widest mb-2">Battle Debrief</div>
-              {battleDebrief}
-            </div>
-          )}
         </div>
       </div>
+      {battleDebrief && !debriefPromptDismissed && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="border border-wraith-border rounded bg-wraith-bg p-5 max-w-md w-full">
+            <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Battle Complete</div>
+            <h2 className="text-xl text-slate-100 mb-3">View the AI debrief?</h2>
+            <p className="text-sm text-slate-400 mb-5">
+              WRAITH generated an after-action summary of the terrain, asset placement, battle outcome, and recommendations.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDebriefPromptDismissed(true)}
+                className="text-xs border border-wraith-border rounded px-3 py-2 text-slate-400 hover:text-slate-100"
+              >
+                Stay Here
+              </button>
+              <button
+                onClick={() => setPage('debrief')}
+                className="text-xs bg-threat-low text-wraith-bg border border-threat-low rounded px-3 py-2 hover:bg-slate-100"
+              >
+                See Debrief
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InstructionBlock({ title, children }: { title: string; children: string }) {
+  return (
+    <div className="border border-wraith-border rounded p-3">
+      <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
+      <p className="text-slate-300 leading-5">{children}</p>
+    </div>
+  )
+}
+
+function VisualKey({ color, label, detail }: { color: string; label: string; detail: string }) {
+  return (
+    <div className="border border-wraith-border rounded p-3">
+      <div className="flex items-center gap-2 text-slate-100 mb-1">
+        <span className={`w-3 h-3 rounded-full ${color}`} />
+        {label}
+      </div>
+      <div className="text-slate-500">{detail}</div>
+    </div>
+  )
+}
+
+function DefenseLayoutPreview({ assets }: { assets: Array<{ id: string; x: number; y: number; type: DefenseAssetType; radius: number; name?: string }> }) {
+  const colors: Record<DefenseAssetType, string> = {
+    jammer: '#f59e0b',
+    interceptor: '#ef4444',
+    spoofer: '#a855f7',
+  }
+
+  return (
+    <div className="relative h-[420px] rounded border border-wraith-border overflow-hidden bg-[#080c10]">
+      <div className="absolute inset-0" style={{
+        backgroundImage: 'linear-gradient(#203246 1px, transparent 1px), linear-gradient(90deg, #203246 1px, transparent 1px)',
+        backgroundSize: '50px 50px',
+      }} />
+      <div className="absolute left-1/2 bottom-16 -translate-x-1/2 w-8 h-8 rounded-full border border-threat-critical text-threat-critical flex items-center justify-center text-xl">⊕</div>
+      {assets.map(asset => (
+        <div key={asset.id}>
+          <div
+            className="absolute rounded-full border"
+            style={{
+              left: `${(asset.x / 800) * 100}%`,
+              top: `${(asset.y / 600) * 100}%`,
+              width: `${Math.max(18, (asset.radius / 800) * 100)}%`,
+              aspectRatio: '1 / 1',
+              transform: 'translate(-50%, -50%)',
+              borderColor: colors[asset.type],
+            }}
+          />
+          <div
+            className="absolute w-3 h-3 rounded-full"
+            style={{
+              left: `${(asset.x / 800) * 100}%`,
+              top: `${(asset.y / 600) * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: colors[asset.type],
+            }}
+            title={asset.name || asset.type}
+          />
+        </div>
+      ))}
     </div>
   )
 }
