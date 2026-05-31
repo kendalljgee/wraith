@@ -105,6 +105,7 @@ class Tournament:
                 "isLLM":     llm_child is not None,
                 "reasoning": llm_child.llm_reasoning if llm_child else "",
                 "params":    best_child.params,
+                "metrics":   best_child.metrics,
             }
             self.history.append(record)
 

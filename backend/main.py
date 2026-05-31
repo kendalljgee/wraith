@@ -155,6 +155,18 @@ async def resume_battle():
     return {"status": "resumed"}
 
 
+@app.post("/api/battle/end")
+async def end_battle(session_id: str | None = None):
+    target_session = session_id if session_id in active_battles else None
+    if target_session is None and active_battles:
+        target_session = next(iter(active_battles.keys()))
+    if target_session is None:
+        return {"status": "no active battle"}
+
+    await finalize_battle(target_session, manual=True)
+    return {"status": "ended", "session_id": target_session}
+
+
 @app.post("/api/battle/speed")
 async def set_battle_speed(speed: float):
     global simulation_speed
@@ -419,11 +431,12 @@ async def generate_debrief(state, strategy) -> str:
                 "You are WRAITH's battle debrief analyst. Produce a concise operational debrief "
                 "for a drone defense simulation. Include: outcome, terrain effects, asset placement "
                 "assessment using meter coordinates, what worked, vulnerabilities, and next test recommendations. "
-                "Do not invent weapon models beyond the provided assets."
+                "Do not invent weapon models beyond the provided assets. Use clear section headings and complete "
+                "sentences. Avoid markdown bold styling."
             ),
             user=json.dumps(summary),
             model_key="analyst",
-            max_tokens=700,
+            max_tokens=1200,
         )
     except Exception as e:
         print(f"Debrief generation failed, using fallback: {e}")
@@ -473,6 +486,21 @@ async def stop_tournament_for_battle_end() -> None:
     })
 
 
+async def finalize_battle(session_id: str, manual: bool = False) -> None:
+    global battle_paused
+    battle = active_battles.get(session_id)
+    if not battle:
+        return
+
+    state, strategy = battle
+    state.terminal = True
+    battle_paused = True
+    active_battles[session_id] = (state, strategy)
+    await stop_tournament_for_battle_end()
+    await manager.broadcast(session_id, serialize_state(state))
+    await broadcast_debrief(session_id, state, strategy)
+
+
 async def handle_battle_command(session_id: str, message: dict) -> None:
     global simulation_speed
     battle = active_battles.get(session_id)
@@ -483,6 +511,8 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
     message_type = message.get("type")
 
     if message_type == "place_defense_asset":
+        if not battle_paused:
+            return
         asset = make_manual_asset(message)
         if not asset:
             return
@@ -492,6 +522,8 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
         return
 
     if message_type == "move_defense_asset":
+        if not battle_paused:
+            return
         asset_id = message.get("id")
         try:
             x = clamp(float(message.get("x")), 0.0, WIDTH)
@@ -507,6 +539,8 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
                 return
 
     if message_type == "remove_defense_asset":
+        if not battle_paused:
+            return
         asset_id = message.get("id")
         state.defense_assets = [
             asset for asset in state.defense_assets
@@ -591,15 +625,10 @@ async def battle_ws(ws: WebSocket, session_id: str):
                     active_battles[session_id] = (state, strategy)
                 else:
                     if active_drone_count(state) == 0:
-                        battle_paused = True
                         if not debrief_sent:
                             debrief_sent = True
-                            asyncio.create_task(broadcast_debrief(session_id, state, strategy))
-                        await stop_tournament_for_battle_end()
+                            await finalize_battle(session_id)
                     else:
-                        if not debrief_sent:
-                            debrief_sent = True
-                            asyncio.create_task(broadcast_debrief(session_id, state, strategy))
                         params = tournament.best.params if tournament.best else None
                         persistent_assets = state.defense_assets
                         persistent_terrain = state.terrain_zones

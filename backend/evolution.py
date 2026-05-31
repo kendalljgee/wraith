@@ -55,6 +55,28 @@ def compute_fitness(state: BattleState) -> float:
     return round(score, 4)
 
 
+def battle_metrics(state: BattleState) -> dict:
+    total = len(state.drones)
+    active = sum(1 for d in state.drones if d.alive and not d.jammed and not d.spoofed)
+    disabled = total - active
+    closest = min(
+        (
+            ((d.x - 400) ** 2 + (d.y - 520) ** 2) ** 0.5
+            for d in state.drones
+            if d.alive
+        ),
+        default=800.0,
+    )
+    return {
+        "active_drones": active,
+        "disabled_drones": disabled,
+        "total_drones": total,
+        "objective_reached": state.objective_reached,
+        "closest_to_objective_m": round(closest, 1),
+        "time_elapsed_s": round(state.time_elapsed, 1),
+    }
+
+
 # ── mutation ───────────────────────────────────────────────
 
 def mutate(strategy: AttackStrategy, llm_suggestion: Optional[dict] = None) -> AttackStrategy:
@@ -156,6 +178,7 @@ def run_battle_sync(
         state = tick(state, strategy)
     fitness = compute_fitness(state)
     strategy.fitness = fitness
+    strategy.metrics = battle_metrics(state)
     return state, fitness
 
 

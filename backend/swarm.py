@@ -17,6 +17,7 @@ class Drone:
     objective: tuple[float, float] = (400.0, 300.0)
     jammed: bool = False               # comms severed by jammer
     spoofed: bool = False              # heading redirected by spoofer
+    decoyed: bool = False              # attacker-side false vector, not a defense disable
 
 @dataclass
 class DefenseAsset:
@@ -49,6 +50,7 @@ class AttackStrategy:
     fitness: float = 0.0
     is_llm_guided: bool = False
     llm_reasoning: Optional[str] = None
+    metrics: dict = field(default_factory=dict)
 
 @dataclass 
 class BattleState:
@@ -88,7 +90,7 @@ def update_drone(drone: Drone, all_drones: list[Drone]) -> None:
     if not drone.alive or drone.jammed:
         return
 
-    ox, oy = drone.objective if not drone.spoofed else (WIDTH / 2, 0.0)
+    ox, oy = drone.objective if not (drone.spoofed or drone.decoyed) else (WIDTH / 2, 0.0)
 
     # 1. pull toward objective
     dx, dy = ox - drone.x, oy - drone.y
@@ -236,10 +238,10 @@ def apply_swarm_attack(
         decoy_y = params.get("decoy_y", HEIGHT * 0.8)
         affected = 0
         for drone in drones:
-            if drone.alive and not drone.spoofed and affected < 5:
+            if drone.alive and not drone.decoyed and affected < 5:
                 d = _dist(drone.x, drone.y, decoy_x, decoy_y)
                 if d < params.get("decoy_radius", 150):
-                    drone.spoofed = True
+                    drone.decoyed = True
                     affected += 1
 
     elif attack_type == "direct":
@@ -257,6 +259,7 @@ def tick(state: BattleState, strategy: AttackStrategy) -> BattleState:
     for drone in state.drones:
         drone.jammed = False
         drone.spoofed = False
+        drone.decoyed = False
 
     # Apply attacker tactics
     apply_swarm_attack(state.drones, strategy)
@@ -402,6 +405,7 @@ def serialize_state(state: BattleState) -> dict:
                 "team": d.team,
                 "jammed": d.jammed,
                 "spoofed": d.spoofed,
+                "decoyed": d.decoyed,
                 "comms_links": d.comms_links,
             }
             for d in state.drones

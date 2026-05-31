@@ -3,7 +3,7 @@ import { useStore } from '../store/battleStore'
 
 const MAX_ATTACK_FITNESS = 1.8
 
-function attackSuccessPercent(fitness: number) {
+function pressurePercent(fitness: number) {
   return Math.round(Math.min(100, Math.max(0, (fitness / MAX_ATTACK_FITNESS) * 100)))
 }
 
@@ -18,7 +18,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
   const best = generations.length > 0
     ? Math.max(...generations.map(g => g.fitness))
     : 0
-  const bestPercent = attackSuccessPercent(best)
+  const bestPercent = pressurePercent(best)
   const latestLlm = [...generations].reverse().find(gen => gen.isLLM && gen.reasoning)
 
   return (
@@ -33,12 +33,12 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
           <div className="text-sm text-slate-200 mt-0.5">
             Gen {generations.length}
             <span className="text-slate-500 text-xs ml-2">
-              attack success {bestPercent}%
+              attacker pressure {bestPercent}%
             </span>
           </div>
         </div>
         <div className="text-xs text-slate-600 uppercase tracking-widest">
-          {challengeActive ? 'Add Assets' : generations.length === 0 ? 'Initializing...' : 'Running'}
+          {challengeActive ? 'Awaiting Assets' : generations.length === 0 ? 'Initializing...' : evolutionComplete ? 'Complete' : 'Running'}
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
-                    width: `${attackSuccessPercent(gen.fitness)}%`,
+                    width: `${pressurePercent(gen.fitness)}%`,
                     backgroundColor: gen.isLLM ? '#f59e0b' : '#22c55e'
                   }}
                 />
@@ -88,7 +88,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
               <span className={`w-10 text-right shrink-0 ${
                 gen.isLLM ? 'text-amber-400' : 'text-emerald-400'
               }`}>
-                {attackSuccessPercent(gen.fitness)}%
+                {pressurePercent(gen.fitness)}%
               </span>
 
                 {/* LLM badge (click to expand reasoning) */}
@@ -98,7 +98,18 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
 
                 {/* Attack type */}
                 <span className="text-slate-600 w-20 shrink-0">{gen.mutation === 'fragmentation' ? 'frag' : gen.mutation === 'decoy' ? 'decoy' : 'direct'}</span>
+                <span className="text-slate-600 w-24 shrink-0">
+                  {gen.metrics?.objective_reached ? 'breach' : 'blocked'}
+                </span>
               </div>
+
+              {gen.metrics && (
+                <div className="ml-12 mt-1 text-[11px] text-slate-600">
+                  disabled {gen.metrics.disabled_drones ?? 0}/{gen.metrics.total_drones ?? 0}
+                  <span className="mx-2">|</span>
+                  closest {Math.round(gen.metrics.closest_to_objective_m ?? 0)}m
+                </div>
+              )}
 
               {expandedGen === gen.number && gen.reasoning && (
                 <div className="mt-1 text-xs text-slate-400 italic px-2">

@@ -83,6 +83,7 @@ export default function App() {
   const [removeMode, setRemoveMode] = useState(false)
   const [battleSpeed, setBattleSpeed] = useState(1)
   const [debriefPromptDismissed, setDebriefPromptDismissed] = useState(false)
+  const [battleHasStarted, setBattleHasStarted] = useState(false)
   const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
   const [terrainPrompt, setTerrainPrompt] = useState('')
@@ -98,20 +99,20 @@ export default function App() {
   const selectedReload = Math.max(0, specReload || 0)
   const selectedEffectiveness = Math.max(0, Math.min(1, specEffectiveness || 0))
 
-  async function enterChallenge() {
-    setChallengeActive(true)
-    setPaused(true)
-    await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
-    await fetch(`${API_URL}/api/tournament/pause`, { method: 'POST' })
-  }
-
   async function runDefense() {
     setChallengeActive(false)
     setPaused(false)
+    setBattleHasStarted(true)
     setBattleDebrief(null)
     setDebriefPromptDismissed(false)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
     await fetch(`${API_URL}/api/tournament/restart?session_id=${SESSION_ID}`, { method: 'POST' })
+  }
+
+  async function endSimulation() {
+    setBattleHasStarted(true)
+    setPaused(true)
+    await fetch(`${API_URL}/api/battle/end?session_id=${SESSION_ID}`, { method: 'POST' })
   }
 
   async function togglePause() {
@@ -126,6 +127,7 @@ export default function App() {
     setChallengeActive(true)
     setRemoveMode(false)
     setDebriefPromptDismissed(false)
+    setBattleHasStarted(false)
     setTerrainPrompt('')
     resetScenario()
     await fetch(`${API_URL}/api/system/reset`, { method: 'POST' })
@@ -141,6 +143,7 @@ export default function App() {
     setPage('landing')
     setPaused(true)
     setChallengeActive(true)
+    setBattleHasStarted(false)
     await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
     await fetch(`${API_URL}/api/tournament/pause`, { method: 'POST' })
   }
@@ -425,10 +428,10 @@ export default function App() {
             </button>
           ) : (
             <button
-              onClick={enterChallenge}
-              className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-300 hover:text-slate-100 hover:border-slate-500 transition-colors"
+              onClick={() => void endSimulation()}
+              className="text-xs border border-threat-critical rounded px-2 py-1 text-threat-critical hover:text-slate-100 hover:border-slate-100 transition-colors"
             >
-              Add Assets
+              End Simulation
             </button>
           )}
 
@@ -642,7 +645,7 @@ export default function App() {
           <EvolutionPanel challengeActive={challengeActive} />
         </div>
       </div>
-      {battleDebrief && !debriefPromptDismissed && (
+      {battleHasStarted && battleDebrief && !debriefPromptDismissed && (active === 0 || paused) && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="border border-wraith-border rounded bg-wraith-bg p-5 max-w-md w-full">
             <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Battle Complete</div>
@@ -702,7 +705,7 @@ function DebriefContent({ text }: { text: string | null }) {
     <div className="space-y-4">
       {sections.map((section, index) => (
         <section key={`${section.title}-${index}`} className="border border-wraith-border rounded p-4 bg-wraith-panel/20">
-          <h2 className="text-sm uppercase tracking-widest text-slate-400 mb-3">{section.title}</h2>
+          <h2 className="text-base font-semibold text-slate-100 mb-3">{section.title}</h2>
           <div className="space-y-2">
             {section.lines.map((line, lineIndex) => (
               <p key={`${line}-${lineIndex}`} className="text-sm leading-6 text-slate-300 break-words">
@@ -717,29 +720,37 @@ function DebriefContent({ text }: { text: string | null }) {
 }
 
 function parseDebrief(text: string) {
-  const cleaned = text
-    .replace(/\*\*/g, '')
-    .replace(/__/g, '')
-    .replace(/\*/g, '')
-    .replace(/^\s*[-•]\s*/gm, '')
-    .trim()
-
-  const rawBlocks = cleaned.split(/\n{2,}/).map(block => block.trim()).filter(Boolean)
   const sections: Array<{ title: string; lines: string[] }> = []
+  let current: { title: string; lines: string[] } = { title: 'Overview', lines: [] }
 
-  rawBlocks.forEach((block, index) => {
-    const lines = block.split('\n').map(line => line.trim()).filter(Boolean)
-    if (lines.length === 0) return
+  const lines = text.split('\n').map(line => (
+    line
+      .replace(/\*\*/g, '')
+      .replace(/__/g, '')
+      .replace(/\*/g, '')
+      .replace(/^\s*[-•]\s*/, '')
+      .trim()
+  )).filter(Boolean)
 
-    const first = lines[0].replace(/:$/, '')
-    const firstLooksLikeTitle = first.length < 54 && /^[A-Z0-9\s/()-]+$/.test(first)
-    sections.push({
-      title: firstLooksLikeTitle ? titleCase(first) : index === 0 ? 'Overview' : `Observation ${index + 1}`,
-      lines: firstLooksLikeTitle ? lines.slice(1) : lines,
-    })
+  lines.forEach((line) => {
+    const markdownHeading = line.match(/^#{1,6}\s+(.+)$/)
+    const plainHeading = line.replace(/:$/, '')
+    const looksLikeHeading = plainHeading.length < 58 && /^[A-Z0-9\s/()'-]+$/.test(plainHeading)
+
+    if (markdownHeading || looksLikeHeading) {
+      if (current.lines.length > 0) sections.push(current)
+      current = {
+        title: titleCase((markdownHeading?.[1] || plainHeading).replace(/:$/, '')),
+        lines: [],
+      }
+      return
+    }
+
+    current.lines.push(line)
   })
 
-  return sections.length > 0 ? sections : [{ title: 'Overview', lines: [cleaned] }]
+  if (current.lines.length > 0) sections.push(current)
+  return sections.length > 0 ? sections : [{ title: 'Overview', lines: ['No debrief is available yet.'] }]
 }
 
 function titleCase(value: string) {

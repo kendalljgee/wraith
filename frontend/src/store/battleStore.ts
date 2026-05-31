@@ -11,6 +11,7 @@ export interface Drone {
   comms_links: string[]
   jammed: boolean
   spoofed: boolean
+  decoyed?: boolean
 }
 
 export type DefenseAssetType = 'jammer' | 'interceptor' | 'spoofer'
@@ -43,6 +44,14 @@ export interface Generation {
   mutation: string
   isLLM: boolean
   reasoning?: string
+  metrics?: {
+    active_drones?: number
+    disabled_drones?: number
+    total_drones?: number
+    objective_reached?: boolean
+    closest_to_objective_m?: number
+    time_elapsed_s?: number
+  }
 }
 
 export type ThreatLevel = 'STANDOFF' | 'APPROACH' | 'DANGER' | 'TERMINAL' | 'BREACH'
