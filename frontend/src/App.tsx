@@ -102,7 +102,7 @@ export default function App() {
     setPaused(false)
     setBattleDebrief(null)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
-    await fetch(`${API_URL}/api/tournament/restart`, { method: 'POST' })
+    await fetch(`${API_URL}/api/tournament/restart?session_id=${SESSION_ID}`, { method: 'POST' })
   }
 
   async function togglePause() {

@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from copy import deepcopy
 from typing import Callable, Optional
 from evolution import (
     evolve_generation,
@@ -20,6 +21,12 @@ class Tournament:
         self.history: list[dict] = []          # generation records for UI
         self.best: Optional[AttackStrategy] = None
         self.on_generation: Optional[Callable] = None  # callback → broadcast to WS
+        self.evaluation_defense_assets = []
+        self.evaluation_terrain_zones = []
+
+    def set_evaluation_context(self, defense_assets=None, terrain_zones=None):
+        self.evaluation_defense_assets = deepcopy(defense_assets or [])
+        self.evaluation_terrain_zones = deepcopy(terrain_zones or [])
 
     def initialize(self, pool_size: int = 6):
         """Seed initial population with varied strategies."""
@@ -39,7 +46,11 @@ class Tournament:
                 params=params
             )
             # Evaluate initial fitness
-            _, fitness = run_battle_sync(strategy)
+            _, fitness = run_battle_sync(
+                strategy,
+                defense_assets=self.evaluation_defense_assets,
+                terrain_zones=self.evaluation_terrain_zones,
+            )
             strategy.fitness = fitness
             self.population.append(strategy)
 
@@ -76,7 +87,9 @@ class Tournament:
                 None,
                 evolve_generation,
                 self.population,
-                llm_suggestion
+                llm_suggestion,
+                self.evaluation_defense_assets,
+                self.evaluation_terrain_zones,
             )
 
             self.population = new_pop
@@ -138,6 +151,8 @@ class Tournament:
             "best_fitness": self.best.fitness if self.best else 0,
             "population_size": len(self.population),
             "history":     self.history[-20:],   # last 20 for UI
+            "defense_assets_evaluated": len(self.evaluation_defense_assets),
+            "terrain_zones_evaluated": len(self.evaluation_terrain_zones),
         }
 
 

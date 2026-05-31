@@ -176,8 +176,8 @@ async def resume_tournament():
 
 
 @app.post("/api/tournament/restart")
-async def restart_tournament_route():
-    await restart_tournament()
+async def restart_tournament_route(session_id: str | None = None):
+    await restart_tournament(session_id=session_id)
     return {"status": "tournament restarted"}
 
 
@@ -226,7 +226,7 @@ async def ensure_tournament_running():
     tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
 
 
-async def restart_tournament():
+async def restart_tournament(session_id: str | None = None):
     global tournament_task
     if tournament_task:
         tournament.stop()
@@ -235,6 +235,21 @@ async def restart_tournament():
             await tournament_task
         except asyncio.CancelledError:
             pass
+
+    evaluation_battle = None
+    if session_id and session_id in active_battles:
+        evaluation_battle = active_battles[session_id]
+    elif active_battles:
+        evaluation_battle = next(iter(active_battles.values()))
+
+    if evaluation_battle:
+        state, _ = evaluation_battle
+        tournament.set_evaluation_context(
+            defense_assets=state.defense_assets,
+            terrain_zones=state.terrain_zones,
+        )
+    else:
+        tournament.set_evaluation_context()
 
     tournament.reset_state()
     tournament.on_generation = broadcast_generation

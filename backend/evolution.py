@@ -1,7 +1,8 @@
 import random
 import uuid
+from copy import deepcopy
 from typing import Optional
-from swarm import AttackStrategy, BattleState, make_battle, tick, WIDTH, HEIGHT
+from swarm import AttackStrategy, BattleState, DefenseAsset, TerrainZone, make_battle, tick, WIDTH, HEIGHT
 
 # ── attack parameter bounds ────────────────────────────────
 PARAM_BOUNDS = {
@@ -135,9 +136,19 @@ def select(population: list[AttackStrategy]) -> list[AttackStrategy]:
 
 # ── battle runner ──────────────────────────────────────────
 
-def run_battle_sync(strategy: AttackStrategy, n_drones: int = 30) -> tuple[BattleState, float]:
+def run_battle_sync(
+    strategy: AttackStrategy,
+    n_drones: int = 30,
+    defense_assets: Optional[list[DefenseAsset]] = None,
+    terrain_zones: Optional[list[TerrainZone]] = None,
+) -> tuple[BattleState, float]:
     """Run a complete battle synchronously. Returns final state + fitness."""
-    state, _ = make_battle(n_drones=n_drones, strategy_params=strategy.params)
+    state, _ = make_battle(
+        n_drones=n_drones,
+        strategy_params=strategy.params,
+        defense_assets=deepcopy(defense_assets) if defense_assets else None,
+        terrain_zones=deepcopy(terrain_zones) if terrain_zones else None,
+    )
     max_ticks = 1000
     for _ in range(max_ticks):
         if state.terminal:
@@ -152,7 +163,9 @@ def run_battle_sync(strategy: AttackStrategy, n_drones: int = 30) -> tuple[Battl
 
 def evolve_generation(
     population: list[AttackStrategy],
-    llm_suggestion: Optional[dict] = None
+    llm_suggestion: Optional[dict] = None,
+    defense_assets: Optional[list[DefenseAsset]] = None,
+    terrain_zones: Optional[list[TerrainZone]] = None,
 ) -> tuple[list[AttackStrategy], list[AttackStrategy]]:
     """
     Run one full evolutionary generation.
@@ -167,7 +180,11 @@ def evolve_generation(
         child = mutate(parent, llm_suggestion if use_llm else None)
 
         # Evaluate child
-        _, fitness = run_battle_sync(child)
+        _, fitness = run_battle_sync(
+            child,
+            defense_assets=defense_assets,
+            terrain_zones=terrain_zones,
+        )
         child.fitness = fitness
         children.append(child)
 
