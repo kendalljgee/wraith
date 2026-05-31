@@ -8,12 +8,11 @@ from evolution import (
 )
 from swarm import AttackStrategy
 
-MAX_GENERATIONS = 100
-
 # ── tournament state ───────────────────────────────────────
 
 class Tournament:
-    def __init__(self):
+    def __init__(self, max_generations: int = 100):
+        self.max_generations = max_generations
         self.running = False
         self.paused = False
         self.generation = 0
@@ -52,7 +51,7 @@ class Tournament:
         self.running = True
         self.initialize()
 
-        while self.running and self.generation < MAX_GENERATIONS:
+        while self.running and self.generation < self.max_generations:
             # If paused, sleep and do not advance generations
             while self.paused and self.running:
                 await asyncio.sleep(1)

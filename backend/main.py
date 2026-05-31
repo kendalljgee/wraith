@@ -121,6 +121,38 @@ TERRAIN_PRESETS = {
         TerrainZone("rf_shadow_south", 500.0, 300.0, 160.0, 180.0, "rf_shadow", "RF shadow"),
     ],
 }
+KNOWN_TERRAIN_PROFILES = {
+    "kabul": [
+        TerrainZone("kabul_urban_basin", 255.0, 210.0, 290.0, 170.0, "urban", "Dense urban basin"),
+        TerrainZone("kabul_ridge_west", 85.0, 285.0, 630.0, 65.0, "ridge", "Mountain ridge line"),
+        TerrainZone("kabul_rf_shadow", 510.0, 115.0, 150.0, 210.0, "rf_shadow", "RF shadow"),
+    ],
+    "afghanistan": [
+        TerrainZone("kabul_urban_basin", 255.0, 210.0, 290.0, 170.0, "urban", "Dense urban basin"),
+        TerrainZone("kabul_ridge_west", 85.0, 285.0, 630.0, 65.0, "ridge", "Mountain ridge line"),
+        TerrainZone("kabul_rf_shadow", 510.0, 115.0, 150.0, 210.0, "rf_shadow", "RF shadow"),
+    ],
+    "new york": [
+        TerrainZone("nyc_highrise_core", 255.0, 155.0, 250.0, 295.0, "urban", "High-rise urban canyon"),
+        TerrainZone("nyc_water_west", 70.0, 95.0, 120.0, 410.0, "water", "River corridor"),
+        TerrainZone("nyc_water_east", 610.0, 90.0, 105.0, 420.0, "water", "River corridor"),
+    ],
+    "nyc": [
+        TerrainZone("nyc_highrise_core", 255.0, 155.0, 250.0, 295.0, "urban", "High-rise urban canyon"),
+        TerrainZone("nyc_water_west", 70.0, 95.0, 120.0, 410.0, "water", "River corridor"),
+        TerrainZone("nyc_water_east", 610.0, 90.0, 105.0, 420.0, "water", "River corridor"),
+    ],
+    "phoenix": [
+        TerrainZone("phoenix_desert_basin", 135.0, 145.0, 530.0, 330.0, "desert", "Desert basin"),
+        TerrainZone("phoenix_urban_grid", 285.0, 220.0, 230.0, 145.0, "urban", "Low-rise urban grid"),
+        TerrainZone("phoenix_ridge_south", 120.0, 430.0, 560.0, 55.0, "ridge", "Desert ridgeline"),
+    ],
+    "arizona": [
+        TerrainZone("phoenix_desert_basin", 135.0, 145.0, 530.0, 330.0, "desert", "Desert basin"),
+        TerrainZone("phoenix_urban_grid", 285.0, 220.0, 230.0, 145.0, "urban", "Low-rise urban grid"),
+        TerrainZone("phoenix_ridge_south", 120.0, 430.0, 560.0, 55.0, "ridge", "Desert ridgeline"),
+    ],
+}
 # ── routes ─────────────────────────────────────────────────
 
 @app.get("/health")
@@ -167,6 +199,12 @@ async def resume_tournament():
     return {"status": "tournament resumed"}
 
 
+@app.post("/api/tournament/restart")
+async def restart_tournament_route():
+    await restart_tournament()
+    return {"status": "tournament restarted"}
+
+
 @app.post("/api/system/reset")
 async def reset_system():
     await reset_all_state()
@@ -204,10 +242,35 @@ async def reset_all_state():
 
 async def ensure_tournament_running():
     global tournament_task
+    if tournament.generation >= tournament.max_generations:
+        await restart_tournament()
+        return
     if tournament_task and not tournament_task.done() and tournament.running:
         return
     tournament.on_generation = broadcast_generation
     tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
+
+
+async def restart_tournament():
+    global tournament_task
+    if tournament_task:
+        tournament.stop()
+        tournament_task.cancel()
+        try:
+            await tournament_task
+        except asyncio.CancelledError:
+            pass
+
+    tournament.reset_state()
+    tournament.on_generation = broadcast_generation
+    tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
+    for session_id in list(manager.active.keys()):
+        await manager.broadcast(session_id, {
+            "type": "hydrate",
+            "history": [],
+            "generation": 0,
+            "replace": True,
+        })
 
 
 def clamp(value: float, lo: float, hi: float) -> float:
@@ -226,21 +289,27 @@ def terrain_from_description(description: str) -> list[TerrainZone]:
     text = description.lower()
     zones: list[TerrainZone] = []
 
-    if "kabul" in text or "afghanistan" in text:
-        return [
-            TerrainZone("kabul_urban_basin", 255.0, 210.0, 290.0, 170.0, "urban", "Dense urban basin"),
-            TerrainZone("kabul_ridge_west", 85.0, 285.0, 630.0, 65.0, "ridge", "Mountain ridge line"),
-            TerrainZone("kabul_rf_shadow", 510.0, 115.0, 150.0, 210.0, "rf_shadow", "RF shadow"),
-        ]
+    for key, profile in KNOWN_TERRAIN_PROFILES.items():
+        if key in text:
+            return profile
 
-    if any(word in text for word in ["city", "urban", "dense", "buildings"]):
+    if any(word in text for word in ["ocean", "oceanic", "maritime", "sea", "coastal", "island"]):
+        zones.append(TerrainZone("generated_water", 70.0, 95.0, 660.0, 395.0, "water", "Open water"))
+        zones.append(TerrainZone("generated_littoral", 95.0, 395.0, 610.0, 55.0, "urban", "Littoral objective zone"))
+    if any(word in text for word in ["desert", "arid", "sand", "dry"]):
+        zones.append(TerrainZone("generated_desert", 135.0, 145.0, 530.0, 330.0, "desert", "Open desert"))
+    if any(word in text for word in ["city", "urban", "dense", "buildings", "downtown"]):
         zones.append(TerrainZone("generated_urban", 250.0, 205.0, 300.0, 190.0, "urban", "Urban clutter"))
-    if any(word in text for word in ["mountain", "ridge", "valley", "hills"]):
-        zones.append(TerrainZone("generated_ridge", 110.0, 270.0, 580.0, 75.0, "ridge", "Terrain mask"))
+    if any(word in text for word in ["mountain", "mountainous", "ridge", "valley", "hills", "alpine"]):
+        zones.append(TerrainZone("generated_ridge_north", 70.0, 155.0, 660.0, 70.0, "ridge", "Mountain ridge"))
+        zones.append(TerrainZone("generated_valley", 155.0, 280.0, 490.0, 105.0, "desert", "Valley floor"))
+        zones.append(TerrainZone("generated_ridge_south", 115.0, 430.0, 570.0, 60.0, "ridge", "Terrain masking ridge"))
     if any(word in text for word in ["rf", "jam", "shadow", "dead zone", "canyon"]):
         zones.append(TerrainZone("generated_rf_shadow", 470.0, 140.0, 180.0, 230.0, "rf_shadow", "RF shadow"))
 
-    return zones or TERRAIN_PRESETS["clear"]
+    return zones or [
+        TerrainZone("generated_mixed", 150.0, 145.0, 500.0, 330.0, "desert", "Generated terrain area"),
+    ]
 
 
 def make_manual_asset(payload: dict) -> DefenseAsset | None:

@@ -21,20 +21,6 @@ const ASSET_TOOLS: Array<{
   { type: 'spoofer', label: 'Spoofer', color: '#a855f7', radius: 110, reload_time: 0, effectiveness: 0.72 },
 ]
 
-const TERRAIN_PRESETS: Record<string, TerrainZone[]> = {
-  clear: [],
-  urban: [
-    { id: 'urban_core', x: 260, y: 210, width: 280, height: 180, type: 'urban', label: 'Urban clutter' },
-  ],
-  ridge: [
-    { id: 'ridge_line', x: 120, y: 260, width: 560, height: 70, type: 'ridge', label: 'Ridgeline mask' },
-  ],
-  rf_shadow: [
-    { id: 'rf_shadow_north', x: 180, y: 120, width: 180, height: 220, type: 'rf_shadow', label: 'RF shadow' },
-    { id: 'rf_shadow_south', x: 500, y: 300, width: 160, height: 180, type: 'rf_shadow', label: 'RF shadow' },
-  ],
-}
-
 type AssetSpec = {
   id: string
   name: string
@@ -75,7 +61,6 @@ export default function App() {
     placeDefenseAsset,
     moveDefenseAsset: sendMoveDefenseAsset,
     removeDefenseAsset: sendRemoveDefenseAsset,
-    setTerrainPreset,
     describeTerrain,
   } = useBattleSocket(SESSION_ID)
 
@@ -112,7 +97,7 @@ export default function App() {
     setChallengeActive(false)
     setPaused(false)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
-    await fetch(`${API_URL}/api/tournament/resume`, { method: 'POST' })
+    await fetch(`${API_URL}/api/tournament/restart`, { method: 'POST' })
   }
 
   async function togglePause() {
@@ -187,11 +172,6 @@ export default function App() {
       loadSpec(specs[0])
       setRemoveMode(false)
     }
-  }
-
-  function chooseTerrainPreset(preset: string) {
-    setTerrainZones(TERRAIN_PRESETS[preset] || [])
-    setTerrainPreset({ preset })
   }
 
   function applyTerrainPrompt() {
@@ -368,16 +348,6 @@ export default function App() {
                 className="w-20 bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300"
               />
             </label>
-            <select
-              onChange={(event) => chooseTerrainPreset(event.target.value)}
-              className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-400"
-              defaultValue="clear"
-            >
-              <option value="clear">Clear terrain</option>
-              <option value="urban">Urban</option>
-              <option value="ridge">Ridge</option>
-              <option value="rf_shadow">RF shadow</option>
-            </select>
             <input
               value={terrainPrompt}
               onChange={(event) => setTerrainPrompt(event.target.value)}
@@ -474,17 +444,42 @@ function terrainFromPrompt(prompt: string): TerrainZone[] {
       { id: 'kabul_rf_shadow', x: 510, y: 115, width: 150, height: 210, type: 'rf_shadow', label: 'RF shadow' },
     ]
   }
+  if (text.includes('new york') || text.includes('nyc') || text.includes('manhattan')) {
+    return [
+      { id: 'nyc_highrise_core', x: 255, y: 155, width: 250, height: 295, type: 'urban', label: 'High-rise urban canyon' },
+      { id: 'nyc_water_west', x: 70, y: 95, width: 120, height: 410, type: 'water', label: 'River corridor' },
+      { id: 'nyc_water_east', x: 610, y: 90, width: 105, height: 420, type: 'water', label: 'River corridor' },
+    ]
+  }
+  if (text.includes('phoenix') || text.includes('arizona') || text.includes('sonoran')) {
+    return [
+      { id: 'phoenix_desert_basin', x: 135, y: 145, width: 530, height: 330, type: 'desert', label: 'Desert basin' },
+      { id: 'phoenix_urban_grid', x: 285, y: 220, width: 230, height: 145, type: 'urban', label: 'Low-rise urban grid' },
+      { id: 'phoenix_ridge_south', x: 120, y: 430, width: 560, height: 55, type: 'ridge', label: 'Desert ridgeline' },
+    ]
+  }
 
   const zones: TerrainZone[] = []
-  if (['city', 'urban', 'dense', 'buildings'].some(word => text.includes(word))) {
+  if (['ocean', 'oceanic', 'maritime', 'sea', 'coastal', 'island'].some(word => text.includes(word))) {
+    zones.push({ id: 'generated_water', x: 70, y: 95, width: 660, height: 395, type: 'water', label: 'Open water' })
+    zones.push({ id: 'generated_littoral', x: 95, y: 395, width: 610, height: 55, type: 'urban', label: 'Littoral objective zone' })
+  }
+  if (['desert', 'arid', 'sand', 'dry'].some(word => text.includes(word))) {
+    zones.push({ id: 'generated_desert', x: 135, y: 145, width: 530, height: 330, type: 'desert', label: 'Open desert' })
+  }
+  if (['city', 'urban', 'dense', 'buildings', 'downtown'].some(word => text.includes(word))) {
     zones.push({ id: 'generated_urban', x: 250, y: 205, width: 300, height: 190, type: 'urban', label: 'Urban clutter' })
   }
-  if (['mountain', 'ridge', 'valley', 'hills'].some(word => text.includes(word))) {
-    zones.push({ id: 'generated_ridge', x: 110, y: 270, width: 580, height: 75, type: 'ridge', label: 'Terrain mask' })
+  if (['mountain', 'mountainous', 'ridge', 'valley', 'hills', 'alpine'].some(word => text.includes(word))) {
+    zones.push({ id: 'generated_ridge_north', x: 70, y: 155, width: 660, height: 70, type: 'ridge', label: 'Mountain ridge' })
+    zones.push({ id: 'generated_valley', x: 155, y: 280, width: 490, height: 105, type: 'desert', label: 'Valley floor' })
+    zones.push({ id: 'generated_ridge_south', x: 115, y: 430, width: 570, height: 60, type: 'ridge', label: 'Terrain masking ridge' })
   }
   if (['rf', 'jam', 'shadow', 'dead zone', 'canyon'].some(word => text.includes(word))) {
     zones.push({ id: 'generated_rf_shadow', x: 470, y: 140, width: 180, height: 230, type: 'rf_shadow', label: 'RF shadow' })
   }
 
-  return zones
+  return zones.length > 0
+    ? zones
+    : [{ id: 'generated_mixed', x: 150, y: 145, width: 500, height: 330, type: 'desert', label: 'Generated terrain area' }]
 }

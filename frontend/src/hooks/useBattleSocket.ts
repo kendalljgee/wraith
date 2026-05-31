@@ -26,6 +26,7 @@ type GenerationMessage = {
 type HydrateMessage = {
   type: 'hydrate'
   history: Generation[]
+  replace?: boolean
 }
 
 type ResetMessage = {
@@ -84,6 +85,7 @@ export function useBattleSocket(sessionId: string) {
     setDefenseAssets,
     setEvolutionComplete,
     setTerrainZones,
+    clearGenerations,
     resetScenario,
   } = useStore()
 
@@ -118,6 +120,7 @@ export function useBattleSocket(sessionId: string) {
           }
           return addGeneration(msg.generation)
         case 'hydrate':
+          if (msg.replace) clearGenerations()
           // Restore full history on reconnect
           msg.history.forEach((g) => addGeneration(g))
           return
@@ -136,6 +139,7 @@ export function useBattleSocket(sessionId: string) {
     addGeneration,
     sessionId,
     setConnected,
+    clearGenerations,
     setDefenseAssets,
     setEvolutionComplete,
     setThreatLevel,

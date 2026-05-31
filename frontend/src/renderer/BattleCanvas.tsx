@@ -19,6 +19,14 @@ const ASSET_RADII: Record<DefenseAssetType, number> = {
   spoofer: 110,
 }
 
+const TERRAIN_COLORS: Record<TerrainZone['type'], number> = {
+  urban: 0x64748b,
+  ridge: 0xb45309,
+  rf_shadow: 0x38bdf8,
+  desert: 0xd6a54a,
+  water: 0x2563eb,
+}
+
 interface BattleCanvasProps {
   mode?: 'challenge' | 'spectator' | 'edit'
   onPlaceAsset?: (asset: { id: string; x: number; y: number; type: DefenseAssetType }) => void
@@ -74,7 +82,7 @@ export default function BattleCanvas({
     dLayer.clear()
     defenseAssetsRef.current.forEach((asset) => {
       if (!asset.active) return
-      drawAsset(dLayer, asset.x, asset.y, asset.radius, ASSET_COLORS[asset.type], 0.3, 0.8)
+      drawAsset(dLayer, asset.x, asset.y, asset.radius, ASSET_COLORS[asset.type], 0.82, 1)
     })
 
     if (modeRef.current === 'challenge' && previewRef.current) {
@@ -85,8 +93,8 @@ export default function BattleCanvas({
         previewRef.current.y,
         previewRadiusRef.current,
         color,
+        0.9,
         0.55,
-        0.35,
         true,
       )
     }
@@ -97,13 +105,11 @@ export default function BattleCanvas({
     if (!layer) return
     layer.clear()
     terrainZonesRef.current.forEach((zone) => {
-      const color = zone.type === 'urban' ? 0x64748b
-        : zone.type === 'ridge' ? 0x8b5e34
-        : 0x38bdf8
+      const color = TERRAIN_COLORS[zone.type]
       layer.rect(zone.x, zone.y, zone.width, zone.height)
-      layer.fill({ color, alpha: 0.22 })
+      layer.fill({ color, alpha: 0.28 })
       layer.rect(zone.x, zone.y, zone.width, zone.height)
-      layer.stroke({ color, width: 1.5, alpha: 0.75 })
+      layer.stroke({ color, width: 2, alpha: 0.9 })
     })
   }
 
@@ -299,11 +305,11 @@ export default function BattleCanvas({
       dot.clear()
       if (drone.alive) {
         if (drone.jammed) {
-          dot.circle(0, -10, 3)
-          dot.fill({ color: 0xf59e0b })
+          dot.circle(0, -10, 4)
+          dot.fill({ color: 0xf59e0b, alpha: 1 })
         } else if (drone.spoofed) {
-          dot.circle(0, -10, 3)
-          dot.fill({ color: 0xa855f7 })
+          dot.circle(0, -10, 4)
+          dot.fill({ color: 0xa855f7, alpha: 1 })
         }
       }
     })
@@ -329,7 +335,7 @@ export default function BattleCanvas({
         }
       })
     })
-    cLayer.stroke({ color: 0x00ff88, width: 0.5, alpha: 0.2 })
+    cLayer.stroke({ color: 0x00ff88, width: 0.8, alpha: 0.65 })
   }, [drones])
 
   return (
@@ -348,10 +354,14 @@ export default function BattleCanvas({
               top: zone.y + 8,
               color: zone.type === 'urban' ? '#cbd5e1'
                 : zone.type === 'ridge' ? '#fbbf24'
-                : '#7dd3fc',
+                : zone.type === 'rf_shadow' ? '#7dd3fc'
+                : zone.type === 'desert' ? '#fde68a'
+                : '#93c5fd',
               borderColor: zone.type === 'urban' ? 'rgba(203, 213, 225, 0.45)'
                 : zone.type === 'ridge' ? 'rgba(251, 191, 36, 0.45)'
-                : 'rgba(125, 211, 252, 0.45)',
+                : zone.type === 'rf_shadow' ? 'rgba(125, 211, 252, 0.45)'
+                : zone.type === 'desert' ? 'rgba(253, 230, 138, 0.5)'
+                : 'rgba(147, 197, 253, 0.5)',
             }}
           >
             {zone.label}
@@ -380,8 +390,8 @@ function drawAsset(
   preview = false,
 ) {
   g.circle(x, y, radius)
-  g.stroke({ color, width: preview ? 1.5 : 1, alpha: ringAlpha })
-  g.circle(x, y, preview ? 7 : 5)
+  g.stroke({ color, width: preview ? 2 : 1.75, alpha: ringAlpha })
+  g.circle(x, y, preview ? 7 : 6)
   g.fill({ color, alpha: centerAlpha })
 }
 
@@ -394,7 +404,7 @@ function drawDroneShape(g: PIXI.Graphics, drone: Drone) {
     : 0x4a9eff
 
   g.poly([0, -7, 5, 5, -5, 5])
-  g.fill({ color, alpha: 0.9 })
+  g.fill({ color, alpha: 1 })
   g.poly([0, -7, 5, 5, -5, 5])
-  g.stroke({ color: 0xffffff, width: 0.5, alpha: 0.3 })
+  g.stroke({ color: 0xffffff, width: 0.75, alpha: 0.65 })
 }

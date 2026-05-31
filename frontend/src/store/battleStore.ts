@@ -33,7 +33,7 @@ export interface TerrainZone {
   y: number
   width: number
   height: number
-  type: 'urban' | 'ridge' | 'rf_shadow'
+  type: 'urban' | 'ridge' | 'rf_shadow' | 'desert' | 'water'
   label: string
 }
 

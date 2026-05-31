@@ -38,7 +38,7 @@ class TerrainZone:
     y: float
     width: float
     height: float
-    terrain_type: str                  # "urban", "ridge", "rf_shadow"
+    terrain_type: str                  # "urban", "ridge", "rf_shadow", "desert", "water"
     label: str
 
 @dataclass
@@ -152,7 +152,7 @@ def apply_attacks(
 
         if asset.asset_type == "jammer":
             # Sever comms for drones inside radius
-            effective_radius = asset.radius * max(0.0, min(1.0, asset.effectiveness))
+            effective_radius = asset.radius
             for drone in drones:
                 if not drone.alive:
                     continue
@@ -176,7 +176,7 @@ def apply_attacks(
 
         elif asset.asset_type == "spoofer":
             # Redirect heading toward false objective
-            effective_radius = asset.radius * max(0.0, min(1.0, asset.effectiveness))
+            effective_radius = asset.radius
             for drone in drones:
                 if not drone.alive:
                     continue
@@ -203,6 +203,12 @@ def apply_terrain_effects(drones: list[Drone], terrain_zones: list[TerrainZone])
                 drone.vy *= 0.82
             elif zone.terrain_type == "rf_shadow":
                 drone.jammed = True
+            elif zone.terrain_type == "desert":
+                drone.vx *= 1.03
+                drone.vy *= 1.03
+            elif zone.terrain_type == "water":
+                drone.vx *= 1.01
+                drone.vy *= 1.01
 
 def apply_swarm_attack(
     drones: list[Drone],
