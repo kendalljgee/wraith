@@ -447,7 +447,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1" style={{ height: '600px' }}>
+        <div className="flex-1 min-w-0" style={{ height: '600px' }}>
           <EvolutionPanel challengeActive={challengeActive} />
           {battleDebrief && (
             <div className="mt-3 border border-wraith-border rounded p-3 text-xs text-slate-300 max-h-48 overflow-y-auto whitespace-pre-wrap">

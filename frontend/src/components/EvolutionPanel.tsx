@@ -22,7 +22,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
   const latestLlm = [...generations].reverse().find(gen => gen.isLLM && gen.reasoning)
 
   return (
-    <div className="border border-wraith-border rounded p-3 h-full flex flex-col">
+    <div className="border border-wraith-border rounded p-3 h-full flex flex-col min-w-0">
 
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
@@ -42,11 +42,11 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
         </div>
       </div>
 
-      <div className="mb-3 border border-wraith-border rounded p-2">
+      <div className="mb-3 border border-wraith-border rounded p-2 min-w-0 overflow-hidden">
         <div className="text-xs text-slate-500 uppercase tracking-widest mb-1">
           LLM Reasoning
         </div>
-        <div className="text-xs text-slate-300">
+        <div className="text-xs text-slate-300 whitespace-pre-wrap break-words">
           {latestLlm?.reasoning || 'Waiting for the analyst model to propose a mutation.'}
         </div>
       </div>
@@ -118,11 +118,6 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
             <div className="uppercase tracking-widest mb-1">Best Strategy</div>
             <div className="space-y-0.5">
               <div>type: <span className="text-slate-300">{best.mutation}</span></div>
-              {best.reasoning && (
-                <div className="text-slate-600 italic truncate" title={best.reasoning}>
-                  "{best.reasoning}"
-                </div>
-              )}
             </div>
           </div>
         )

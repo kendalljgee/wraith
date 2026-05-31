@@ -427,6 +427,14 @@ async def generate_debrief(state, strategy) -> str:
         )
 
 
+async def broadcast_debrief(session_id: str, state, strategy) -> None:
+    debrief = await generate_debrief(state, strategy)
+    await manager.broadcast(session_id, {
+        "type": "debrief",
+        "debrief": debrief,
+    })
+
+
 async def handle_battle_command(session_id: str, message: dict) -> None:
     global simulation_speed
     battle = active_battles.get(session_id)
@@ -522,7 +530,6 @@ async def battle_ws(ws: WebSocket, session_id: str):
     active_battles[session_id] = (state, strategy)
     commands: asyncio.Queue = asyncio.Queue()
     command_reader = asyncio.create_task(receive_battle_commands(ws, commands))
-    debrief_sent = False
 
     try:
         while True:
@@ -540,16 +547,20 @@ async def battle_ws(ws: WebSocket, session_id: str):
             # current state so clients know the simulation is paused.
             if not battle_paused:
                 if not state.terminal:
-                    debrief_sent = False
                     state = tick(state, strategy)
                     active_battles[session_id] = (state, strategy)
-                elif not debrief_sent:
-                    debrief_sent = True
-                    debrief = await generate_debrief(state, strategy)
-                    await manager.broadcast(session_id, {
-                        "type": "debrief",
-                        "debrief": debrief,
-                    })
+                else:
+                    asyncio.create_task(broadcast_debrief(session_id, state, strategy))
+                    params = tournament.best.params if tournament.best else None
+                    persistent_assets = state.defense_assets
+                    persistent_terrain = state.terrain_zones
+                    state, strategy = make_battle(
+                        session_id=session_id,
+                        strategy_params=params,
+                        defense_assets=persistent_assets,
+                        terrain_zones=persistent_terrain,
+                    )
+                    active_battles[session_id] = (state, strategy)
 
             await manager.broadcast(session_id, serialize_state(state))
             await asyncio.sleep(DT / simulation_speed)
