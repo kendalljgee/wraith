@@ -29,6 +29,7 @@ class DefenseAsset:
     active: bool = True
     cooldown: float = 0.0              # seconds until can fire again
     reload_time: float = 2.0           # seconds between interceptor shots
+    effectiveness: float = 1.0         # probability/effect strength, 0.0-1.0
 
 @dataclass
 class TerrainZone:
@@ -151,11 +152,12 @@ def apply_attacks(
 
         if asset.asset_type == "jammer":
             # Sever comms for drones inside radius
+            effective_radius = asset.radius * max(0.0, min(1.0, asset.effectiveness))
             for drone in drones:
                 if not drone.alive:
                     continue
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
-                drone.jammed = d < asset.radius
+                drone.jammed = d < effective_radius
 
         elif asset.asset_type == "interceptor":
             # Kill drones inside radius (with cooldown)
@@ -167,17 +169,19 @@ def apply_attacks(
                     continue
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
                 if d < asset.radius:
-                    drone.alive = False
+                    if random.random() <= max(0.0, min(1.0, asset.effectiveness)):
+                        drone.alive = False
                     asset.cooldown = asset.reload_time
                     break                      # one kill per tick per interceptor
 
         elif asset.asset_type == "spoofer":
             # Redirect heading toward false objective
+            effective_radius = asset.radius * max(0.0, min(1.0, asset.effectiveness))
             for drone in drones:
                 if not drone.alive:
                     continue
                 d = _dist(drone.x, drone.y, asset.x, asset.y)
-                drone.spoofed = d < asset.radius
+                drone.spoofed = d < effective_radius
 
 def apply_terrain_effects(drones: list[Drone], terrain_zones: list[TerrainZone]) -> None:
     for drone in drones:
@@ -396,6 +400,7 @@ def serialize_state(state: BattleState) -> dict:
                 "radius": a.radius,
                 "active": a.active,
                 "reload_time": round(a.reload_time, 2),
+                "effectiveness": round(a.effectiveness, 3),
             }
             for a in state.defense_assets
         ]

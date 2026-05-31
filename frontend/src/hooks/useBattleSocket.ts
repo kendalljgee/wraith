@@ -3,8 +3,6 @@ import { useStore } from '../store/battleStore'
 import type {
   DefenseAsset,
   DefenseAssetType,
-  DefenseUpgrade,
-  DefenseUpgrades,
   Drone,
   Generation,
   TerrainZone,
@@ -16,7 +14,6 @@ type StateMessage = {
   type: 'state'
   drones: Drone[]
   defense_assets?: DefenseAsset[]
-  defense_upgrades?: DefenseUpgrades
   terrain_zones?: TerrainZone[]
   objective_reached?: boolean
 }
@@ -46,6 +43,7 @@ type PlaceDefenseAssetCommand = {
   y: number
   radius?: number
   reload_time?: number
+  effectiveness?: number
 }
 
 type MoveDefenseAssetCommand = {
@@ -53,11 +51,6 @@ type MoveDefenseAssetCommand = {
   id: string
   x: number
   y: number
-}
-
-type UpgradeDefenseCommand = {
-  type: 'upgrade_defense'
-  upgrade: DefenseUpgrade
 }
 
 type RemoveDefenseAssetCommand = {
@@ -89,7 +82,6 @@ export function useBattleSocket(sessionId: string) {
     setThreatLevel,
     setConnected,
     setDefenseAssets,
-    setDefenseUpgrades,
     setEvolutionComplete,
     setTerrainZones,
     resetScenario,
@@ -109,8 +101,12 @@ export function useBattleSocket(sessionId: string) {
         case 'state': {
           updateDrones(msg.drones)
           if (msg.defense_assets) setDefenseAssets(msg.defense_assets)
-          if (msg.defense_upgrades) setDefenseUpgrades(msg.defense_upgrades)
-          if (msg.terrain_zones) setTerrainZones(msg.terrain_zones)
+          if (msg.terrain_zones) {
+            const currentTerrain = useStore.getState().terrainZones
+            if (msg.terrain_zones.length > 0 || currentTerrain.length === 0) {
+              setTerrainZones(msg.terrain_zones)
+            }
+          }
           setThreatLevel(computeThreatLevel(msg))
           return
         }
@@ -141,7 +137,6 @@ export function useBattleSocket(sessionId: string) {
     sessionId,
     setConnected,
     setDefenseAssets,
-    setDefenseUpgrades,
     setEvolutionComplete,
     setThreatLevel,
     setTerrainZones,
@@ -165,11 +160,6 @@ export function useBattleSocket(sessionId: string) {
       ws.current.send(JSON.stringify({ type: 'remove_defense_asset', ...asset }))
       return true
     },
-    upgradeDefense: (upgrade: Omit<UpgradeDefenseCommand, 'type'>) => {
-      if (ws.current?.readyState !== WebSocket.OPEN) return false
-      ws.current.send(JSON.stringify({ type: 'upgrade_defense', ...upgrade }))
-      return true
-    },
     setTerrainPreset: (terrain: Omit<TerrainPresetCommand, 'type'>) => {
       if (ws.current?.readyState !== WebSocket.OPEN) return false
       ws.current.send(JSON.stringify({ type: 'set_terrain_preset', ...terrain }))
@@ -184,16 +174,17 @@ export function useBattleSocket(sessionId: string) {
 }
 
 function computeThreatLevel(msg: StateMessage) {
-  if (msg.objective_reached) return 'HIGH'
+  if (msg.objective_reached) return 'BREACH'
 
   const alive = msg.drones.filter((drone) => drone.alive)
-  if (alive.length === 0) return 'LOW'
+  if (alive.length === 0) return 'STANDOFF'
 
   const closestToObjective = Math.min(
     ...alive.map((drone) => Math.hypot(drone.x - 400, drone.y - 520)),
   )
 
-  if (closestToObjective < 90) return 'HIGH'
-  if (closestToObjective < 220 || alive.length > 18) return 'MEDIUM'
-  return 'LOW'
+  if (closestToObjective < 55) return 'TERMINAL'
+  if (closestToObjective < 130) return 'DANGER'
+  if (closestToObjective < 260 || alive.length > 18) return 'APPROACH'
+  return 'STANDOFF'
 }

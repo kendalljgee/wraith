@@ -108,7 +108,6 @@ ASSET_RADII = {
     "interceptor": 60.0,
     "spoofer": 110.0,
 }
-MAX_UPGRADE_LEVEL = 3
 TERRAIN_PRESETS = {
     "clear": [],
     "urban": [
@@ -122,12 +121,6 @@ TERRAIN_PRESETS = {
         TerrainZone("rf_shadow_south", 500.0, 300.0, 160.0, 180.0, "rf_shadow", "RF shadow"),
     ],
 }
-DEFAULT_UPGRADES = {
-    "ew_range": 0,
-    "interceptor_readiness": 0,
-    "sensor_fusion": 0,
-}
-
 # ── routes ─────────────────────────────────────────────────
 
 @app.get("/health")
@@ -170,6 +163,7 @@ async def pause_tournament():
 @app.post("/api/tournament/resume")
 async def resume_tournament():
     tournament.paused = False
+    await ensure_tournament_running()
     return {"status": "tournament resumed"}
 
 
@@ -208,40 +202,24 @@ async def reset_all_state():
         await manager.broadcast(session_id, serialize_state(state))
 
 
+async def ensure_tournament_running():
+    global tournament_task
+    if tournament_task and not tournament_task.done() and tournament.running:
+        return
+    tournament.on_generation = broadcast_generation
+    tournament_task = asyncio.create_task(tournament.run(llm_callback=llm_mutation_callback))
+
+
 def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
-def asset_radius(asset_type: str, upgrades: dict[str, int]) -> float:
-    radius = ASSET_RADII[asset_type]
-    if asset_type in {"jammer", "spoofer"}:
-        radius *= 1 + upgrades.get("ew_range", 0) * 0.15
-    radius *= 1 + upgrades.get("sensor_fusion", 0) * 0.08
-    return round(radius, 1)
-
-
-def payload_radius(payload: dict, asset_type: str, upgrades: dict[str, int]) -> float:
+def payload_radius(payload: dict, asset_type: str) -> float:
     try:
         radius = float(payload.get("radius"))
     except (TypeError, ValueError):
-        return asset_radius(asset_type, upgrades)
-
-    if asset_type in {"jammer", "spoofer"}:
-        radius *= 1 + upgrades.get("ew_range", 0) * 0.15
-    radius *= 1 + upgrades.get("sensor_fusion", 0) * 0.08
+        return ASSET_RADII[asset_type]
     return round(clamp(radius, 20.0, 320.0), 1)
-
-
-def interceptor_reload(upgrades: dict[str, int]) -> float:
-    return max(0.75, round(2.0 - upgrades.get("interceptor_readiness", 0) * 0.35, 2))
-
-
-def apply_defense_upgrades(state) -> None:
-    for asset in state.defense_assets:
-        asset.radius = asset_radius(asset.asset_type, state.defense_upgrades)
-        if asset.asset_type == "interceptor":
-            asset.reload_time = interceptor_reload(state.defense_upgrades)
-            asset.cooldown = min(asset.cooldown, asset.reload_time)
 
 
 def terrain_from_description(description: str) -> list[TerrainZone]:
@@ -265,7 +243,7 @@ def terrain_from_description(description: str) -> list[TerrainZone]:
     return zones or TERRAIN_PRESETS["clear"]
 
 
-def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> DefenseAsset | None:
+def make_manual_asset(payload: dict) -> DefenseAsset | None:
     asset_type = payload.get("asset_type")
     if asset_type not in ASSET_RADII:
         return None
@@ -276,13 +254,16 @@ def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> 
     except (TypeError, ValueError):
         return None
 
-    upgrade_state = upgrades or {}
     asset_id = str(payload.get("id") or f"manual_{asset_type}_{int(x)}_{int(y)}")
     name = str(payload.get("name") or asset_type.title())
     try:
         reload_time = float(payload.get("reload_time"))
     except (TypeError, ValueError):
-        reload_time = interceptor_reload(upgrade_state)
+        reload_time = 2.0
+    try:
+        effectiveness = float(payload.get("effectiveness"))
+    except (TypeError, ValueError):
+        effectiveness = 1.0
 
     return DefenseAsset(
         id=asset_id,
@@ -290,8 +271,9 @@ def make_manual_asset(payload: dict, upgrades: dict[str, int] | None = None) -> 
         x=x,
         y=y,
         asset_type=asset_type,
-        radius=payload_radius(payload, asset_type, upgrade_state),
+        radius=payload_radius(payload, asset_type),
         reload_time=max(0.25, min(10.0, reload_time)),
+        effectiveness=clamp(effectiveness, 0.0, 1.0),
     )
 
 
@@ -304,7 +286,7 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
     message_type = message.get("type")
 
     if message_type == "place_defense_asset":
-        asset = make_manual_asset(message, state.defense_upgrades)
+        asset = make_manual_asset(message)
         if not asset:
             return
 
@@ -361,18 +343,6 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
         active_battles[session_id] = (state, strategy)
         return
 
-    if message_type == "upgrade_defense":
-        upgrade = message.get("upgrade")
-        if upgrade not in state.defense_upgrades:
-            return
-
-        state.defense_upgrades[upgrade] = min(
-            MAX_UPGRADE_LEVEL,
-            state.defense_upgrades[upgrade] + 1,
-        )
-        apply_defense_upgrades(state)
-        active_battles[session_id] = (state, strategy)
-
 
 async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:
     while True:
@@ -381,6 +351,7 @@ async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:
 @app.websocket("/ws/battle/{session_id}")
 async def battle_ws(ws: WebSocket, session_id: str):
     await manager.connect(ws, session_id)
+    await ensure_tournament_running()
 
     # Hydrate frontend with existing tournament history
     await ws.send_json({
@@ -417,13 +388,11 @@ async def battle_ws(ws: WebSocket, session_id: str):
                 else:
                     params = tournament.best.params if tournament.best else None
                     persistent_assets = state.defense_assets
-                    persistent_upgrades = state.defense_upgrades
                     persistent_terrain = state.terrain_zones
                     state, strategy = make_battle(
                         session_id=session_id,
                         strategy_params=params,
                         defense_assets=persistent_assets,
-                        defense_upgrades=persistent_upgrades,
                         terrain_zones=persistent_terrain,
                     )
                     active_battles[session_id] = (state, strategy)

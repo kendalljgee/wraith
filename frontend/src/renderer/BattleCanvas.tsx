@@ -101,9 +101,9 @@ export default function BattleCanvas({
         : zone.type === 'ridge' ? 0x8b5e34
         : 0x38bdf8
       layer.rect(zone.x, zone.y, zone.width, zone.height)
-      layer.fill({ color, alpha: 0.13 })
+      layer.fill({ color, alpha: 0.22 })
       layer.rect(zone.x, zone.y, zone.width, zone.height)
-      layer.stroke({ color, width: 1, alpha: 0.35 })
+      layer.stroke({ color, width: 1.5, alpha: 0.75 })
     })
   }
 
@@ -334,10 +334,31 @@ export default function BattleCanvas({
 
   return (
     <div
-      ref={canvasRef}
-      className="rounded border border-wraith-border overflow-hidden"
+      className="relative rounded border border-wraith-border overflow-hidden"
       style={{ width: WIDTH, height: HEIGHT }}
-    />
+    >
+      <div ref={canvasRef} className="absolute inset-0" />
+      <div className="pointer-events-none absolute inset-0">
+        {terrainZones.map((zone) => (
+          <div
+            key={zone.id}
+            className="absolute rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-widest bg-wraith-bg/80"
+            style={{
+              left: zone.x + 8,
+              top: zone.y + 8,
+              color: zone.type === 'urban' ? '#cbd5e1'
+                : zone.type === 'ridge' ? '#fbbf24'
+                : '#7dd3fc',
+              borderColor: zone.type === 'urban' ? 'rgba(203, 213, 225, 0.45)'
+                : zone.type === 'ridge' ? 'rgba(251, 191, 36, 0.45)'
+                : 'rgba(125, 211, 252, 0.45)',
+            }}
+          >
+            {zone.label}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

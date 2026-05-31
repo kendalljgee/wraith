@@ -3,7 +3,7 @@ import EvolutionPanel from './components/EvolutionPanel'
 import { useBattleSocket } from './hooks/useBattleSocket'
 import BattleCanvas from './renderer/BattleCanvas'
 import { useStore } from './store/battleStore'
-import type { DefenseAssetType, DefenseUpgrade, TerrainZone } from './store/battleStore'
+import type { DefenseAssetType, TerrainZone } from './store/battleStore'
 
 const SESSION_ID = 'dev-session-001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
@@ -13,19 +13,12 @@ const ASSET_TOOLS: Array<{
   label: string
   color: string
   radius: number
+  reload_time: number
+  effectiveness: number
 }> = [
-  { type: 'jammer', label: 'Jammer', color: '#f59e0b', radius: 110 },
-  { type: 'interceptor', label: 'Interceptor', color: '#ef4444', radius: 60 },
-  { type: 'spoofer', label: 'Spoofer', color: '#a855f7', radius: 110 },
-]
-
-const UPGRADE_TOOLS: Array<{
-  key: DefenseUpgrade
-  label: string
-}> = [
-  { key: 'ew_range', label: 'EW range' },
-  { key: 'interceptor_readiness', label: 'Reload' },
-  { key: 'sensor_fusion', label: 'Sensor fusion' },
+  { type: 'jammer', label: 'Jammer', color: '#f59e0b', radius: 110, reload_time: 0, effectiveness: 0.82 },
+  { type: 'interceptor', label: 'Interceptor', color: '#ef4444', radius: 60, reload_time: 2, effectiveness: 0.75 },
+  { type: 'spoofer', label: 'Spoofer', color: '#a855f7', radius: 110, reload_time: 0, effectiveness: 0.72 },
 ]
 
 const TERRAIN_PRESETS: Record<string, TerrainZone[]> = {
@@ -48,6 +41,22 @@ type AssetSpec = {
   type: DefenseAssetType
   radius: number
   reload_time?: number
+  effectiveness?: number
+  latency_ms?: number
+}
+
+type ImportedAssetSpec = Partial<AssetSpec> & {
+  range_m?: number
+  reload_s?: number
+  pk?: number
+}
+
+const threatColors = {
+  BREACH: 'text-threat-critical',
+  TERMINAL: 'text-red-400',
+  DANGER: 'text-threat-elevated',
+  APPROACH: 'text-amber-300',
+  STANDOFF: 'text-threat-low',
 }
 
 export default function App() {
@@ -56,11 +65,9 @@ export default function App() {
     connected,
     drones,
     defenseAssets,
-    defenseUpgrades,
     addDefenseAsset,
     moveDefenseAsset,
     removeDefenseAsset,
-    incrementDefenseUpgrade,
     setTerrainZones,
     resetScenario,
   } = useStore()
@@ -70,7 +77,6 @@ export default function App() {
     removeDefenseAsset: sendRemoveDefenseAsset,
     setTerrainPreset,
     describeTerrain,
-    upgradeDefense,
   } = useBattleSocket(SESSION_ID)
 
   const alive = drones.filter(d => d.alive).length
@@ -83,12 +89,17 @@ export default function App() {
   const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
   const [terrainPrompt, setTerrainPrompt] = useState('')
+  const [specRadius, setSpecRadius] = useState(ASSET_TOOLS[0].radius)
+  const [specReload, setSpecReload] = useState(ASSET_TOOLS[0].reload_time)
+  const [specEffectiveness, setSpecEffectiveness] = useState(ASSET_TOOLS[0].effectiveness)
+  const [specLatency, setSpecLatency] = useState(0)
 
   const selectedSpec = customSpecs.find(spec => spec.id === selectedSpecId)
   const selectedTool = selectedSpec || ASSET_TOOLS.find(tool => tool.type === selectedAsset)!
-  const selectedRadius = getAssetRadius(selectedTool.type, selectedTool.radius, defenseUpgrades)
   const selectedName = 'name' in selectedTool ? selectedTool.name : selectedTool.label
-  const selectedReload = 'reload_time' in selectedTool ? selectedTool.reload_time : undefined
+  const selectedRadius = Math.max(1, specRadius || selectedTool.radius)
+  const selectedReload = Math.max(0, specReload || 0)
+  const selectedEffectiveness = Math.max(0, Math.min(1, specEffectiveness || 0))
 
   async function enterChallenge() {
     setChallengeActive(true)
@@ -121,33 +132,59 @@ export default function App() {
   }
 
   function selectAssetTool(type: DefenseAssetType) {
+    const tool = ASSET_TOOLS.find(candidate => candidate.type === type)!
     setSelectedAsset(type)
     setSelectedSpecId(null)
     setRemoveMode(false)
+    loadSpec(tool)
+  }
+
+  function loadSpec(spec: Pick<AssetSpec, 'type' | 'radius'> & {
+    reload_time?: number
+    effectiveness?: number
+    latency_ms?: number
+  }) {
+    setSelectedAsset(spec.type)
+    setSpecRadius(spec.radius)
+    setSpecReload(spec.reload_time ?? 0)
+    setSpecEffectiveness(spec.effectiveness ?? 0.75)
+    setSpecLatency(spec.latency_ms ?? 0)
   }
 
   async function importAssetSpecs(file: File | null) {
     if (!file) return
     const text = await file.text()
-    const parsed = JSON.parse(text) as Array<Partial<AssetSpec>>
-    const specs = parsed
-      .filter((spec): spec is Partial<AssetSpec> & { name: string; type: DefenseAssetType; radius: number } => (
-        typeof spec.name === 'string'
-        && (spec.type === 'jammer' || spec.type === 'interceptor' || spec.type === 'spoofer')
-        && typeof spec.radius === 'number'
-      ))
-      .map((spec, index) => ({
+    const parsed = JSON.parse(text) as Array<ImportedAssetSpec>
+    const specs: AssetSpec[] = []
+
+    parsed.forEach((spec, index) => {
+      const radius = typeof spec.radius === 'number' ? spec.radius : spec.range_m
+      const reloadTime = typeof spec.reload_time === 'number' ? spec.reload_time : spec.reload_s
+      const effectiveness = typeof spec.effectiveness === 'number' ? spec.effectiveness : spec.pk
+
+      if (
+        typeof spec.name !== 'string'
+        || (spec.type !== 'jammer' && spec.type !== 'interceptor' && spec.type !== 'spoofer')
+        || typeof radius !== 'number'
+      ) {
+        return
+      }
+
+      specs.push({
         id: spec.id || `spec_${Date.now()}_${index}`,
         name: spec.name,
         type: spec.type,
-        radius: spec.radius,
-        reload_time: spec.reload_time,
-      }))
+        radius,
+        reload_time: reloadTime,
+        effectiveness,
+        latency_ms: spec.latency_ms,
+      })
+    })
 
     setCustomSpecs(specs)
     if (specs[0]) {
       setSelectedSpecId(specs[0].id)
-      setSelectedAsset(specs[0].type)
+      loadSpec(specs[0])
       setRemoveMode(false)
     }
   }
@@ -159,6 +196,7 @@ export default function App() {
 
   function applyTerrainPrompt() {
     if (!terrainPrompt.trim()) return
+    setTerrainZones(terrainFromPrompt(terrainPrompt))
     describeTerrain({ description: terrainPrompt })
   }
 
@@ -219,11 +257,7 @@ export default function App() {
       <div className="grid grid-cols-4 gap-3 text-xs mb-4">
         <div className="border border-wraith-border rounded p-3">
           <div className="text-slate-500 uppercase tracking-widest mb-1">Threat Level</div>
-          <div className={`font-medium text-sm ${
-            threatLevel === 'HIGH' ? 'text-threat-critical' :
-            threatLevel === 'MEDIUM' ? 'text-threat-elevated' :
-            'text-threat-low'
-          }`}>{threatLevel}</div>
+          <div className={`font-medium text-sm ${threatColors[threatLevel]}`}>{threatLevel}</div>
         </div>
         <div className="border border-wraith-border rounded p-3">
           <div className="text-slate-500 uppercase tracking-widest mb-1">Drones Active</div>
@@ -266,8 +300,8 @@ export default function App() {
                 key={spec.id}
                 onClick={() => {
                   setSelectedSpecId(spec.id)
-                  setSelectedAsset(spec.type)
                   setRemoveMode(false)
+                  loadSpec(spec)
                 }}
                 className={`text-xs border rounded px-2 py-1 transition-colors ${
                   selectedSpecId === spec.id
@@ -290,7 +324,50 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <label className="text-xs text-slate-500 flex items-center gap-1">
+              Range
+              <input
+                type="number"
+                min="1"
+                value={specRadius}
+                onChange={(event) => setSpecRadius(Number(event.target.value))}
+                className="w-20 bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300"
+              />
+            </label>
+            <label className="text-xs text-slate-500 flex items-center gap-1">
+              Reload
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={specReload}
+                onChange={(event) => setSpecReload(Number(event.target.value))}
+                className="w-20 bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300"
+              />
+            </label>
+            <label className="text-xs text-slate-500 flex items-center gap-1">
+              Effect
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={specEffectiveness}
+                onChange={(event) => setSpecEffectiveness(Number(event.target.value))}
+                className="w-20 bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300"
+              />
+            </label>
+            <label className="text-xs text-slate-500 flex items-center gap-1">
+              Latency
+              <input
+                type="number"
+                min="0"
+                value={specLatency}
+                onChange={(event) => setSpecLatency(Number(event.target.value))}
+                className="w-20 bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300"
+              />
+            </label>
             <select
               onChange={(event) => chooseTerrainPreset(event.target.value)}
               className="text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-400"
@@ -316,19 +393,6 @@ export default function App() {
             >
               Apply Terrain
             </button>
-            {UPGRADE_TOOLS.map(upgrade => (
-              <button
-                key={upgrade.key}
-                onClick={() => {
-                  incrementDefenseUpgrade(upgrade.key)
-                  upgradeDefense({ upgrade: upgrade.key })
-                }}
-                disabled={defenseUpgrades[upgrade.key] >= 3}
-                className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 disabled:opacity-40 disabled:hover:text-slate-400 transition-colors"
-              >
-                {upgrade.label} {defenseUpgrades[upgrade.key]}/3
-              </button>
-            ))}
             <label className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-400 hover:text-slate-100 transition-colors">
               Import Specs
               <input
@@ -359,8 +423,9 @@ export default function App() {
                 asset_type: asset.type,
                 x: asset.x,
                 y: asset.y,
-                radius: selectedTool.radius,
+                radius: selectedRadius,
                 reload_time: selectedReload,
+                effectiveness: selectedEffectiveness,
               })
 
               addDefenseAsset({
@@ -371,6 +436,8 @@ export default function App() {
                 type: asset.type,
                 radius: selectedRadius,
                 active: true,
+                reload_time: selectedReload,
+                effectiveness: selectedEffectiveness,
               })
             }}
             onMoveAsset={(asset) => {
@@ -398,15 +465,26 @@ export default function App() {
   )
 }
 
-function getAssetRadius(
-  type: DefenseAssetType,
-  baseRadius: number,
-  upgrades: Record<DefenseUpgrade, number>,
-) {
-  let radius = baseRadius
-  if (type === 'jammer' || type === 'spoofer') {
-    radius *= 1 + upgrades.ew_range * 0.15
+function terrainFromPrompt(prompt: string): TerrainZone[] {
+  const text = prompt.toLowerCase()
+  if (text.includes('kabul') || text.includes('afghanistan')) {
+    return [
+      { id: 'kabul_urban_basin', x: 255, y: 210, width: 290, height: 170, type: 'urban', label: 'Dense urban basin' },
+      { id: 'kabul_ridge_west', x: 85, y: 285, width: 630, height: 65, type: 'ridge', label: 'Mountain ridge line' },
+      { id: 'kabul_rf_shadow', x: 510, y: 115, width: 150, height: 210, type: 'rf_shadow', label: 'RF shadow' },
+    ]
   }
-  radius *= 1 + upgrades.sensor_fusion * 0.08
-  return Math.round(radius * 10) / 10
+
+  const zones: TerrainZone[] = []
+  if (['city', 'urban', 'dense', 'buildings'].some(word => text.includes(word))) {
+    zones.push({ id: 'generated_urban', x: 250, y: 205, width: 300, height: 190, type: 'urban', label: 'Urban clutter' })
+  }
+  if (['mountain', 'ridge', 'valley', 'hills'].some(word => text.includes(word))) {
+    zones.push({ id: 'generated_ridge', x: 110, y: 270, width: 580, height: 75, type: 'ridge', label: 'Terrain mask' })
+  }
+  if (['rf', 'jam', 'shadow', 'dead zone', 'canyon'].some(word => text.includes(word))) {
+    zones.push({ id: 'generated_rf_shadow', x: 470, y: 140, width: 180, height: 230, type: 'rf_shadow', label: 'RF shadow' })
+  }
+
+  return zones
 }
