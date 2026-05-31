@@ -269,6 +269,16 @@ def tick(state: BattleState, strategy: AttackStrategy) -> BattleState:
 
     apply_terrain_effects(state.drones, state.terrain_zones)
 
+    # If every surviving drone is currently jammed/spoofed, the defender has
+    # neutralized this attack wave.
+    active = [
+        d for d in state.drones
+        if d.alive and not d.jammed and not d.spoofed
+    ]
+    if not active:
+        state.terminal = True
+        return state
+
     # Move drones
     for drone in state.drones:
         update_drone(drone, state.drones)

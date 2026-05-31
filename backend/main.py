@@ -450,6 +450,29 @@ async def broadcast_debrief(session_id: str, state, strategy) -> None:
     })
 
 
+def active_drone_count(state) -> int:
+    return sum(
+        1 for drone in state.drones
+        if drone.alive and not drone.jammed and not drone.spoofed
+    )
+
+
+async def stop_tournament_for_battle_end() -> None:
+    global tournament_task
+    tournament.stop()
+    tournament.paused = True
+    if tournament_task and not tournament_task.done():
+        tournament_task.cancel()
+        try:
+            await tournament_task
+        except asyncio.CancelledError:
+            pass
+    await broadcast_generation({
+        "type": "complete",
+        "generation": tournament.generation,
+    })
+
+
 async def handle_battle_command(session_id: str, message: dict) -> None:
     global simulation_speed
     battle = active_battles.get(session_id)
@@ -530,6 +553,7 @@ async def receive_battle_commands(ws: WebSocket, queue: asyncio.Queue) -> None:
 
 @app.websocket("/ws/battle/{session_id}")
 async def battle_ws(ws: WebSocket, session_id: str):
+    global battle_paused
     await manager.connect(ws, session_id)
 
     # Hydrate frontend with existing tournament history
@@ -545,6 +569,7 @@ async def battle_ws(ws: WebSocket, session_id: str):
     active_battles[session_id] = (state, strategy)
     commands: asyncio.Queue = asyncio.Queue()
     command_reader = asyncio.create_task(receive_battle_commands(ws, commands))
+    debrief_sent = False
 
     try:
         while True:
@@ -565,17 +590,27 @@ async def battle_ws(ws: WebSocket, session_id: str):
                     state = tick(state, strategy)
                     active_battles[session_id] = (state, strategy)
                 else:
-                    asyncio.create_task(broadcast_debrief(session_id, state, strategy))
-                    params = tournament.best.params if tournament.best else None
-                    persistent_assets = state.defense_assets
-                    persistent_terrain = state.terrain_zones
-                    state, strategy = make_battle(
-                        session_id=session_id,
-                        strategy_params=params,
-                        defense_assets=persistent_assets,
-                        terrain_zones=persistent_terrain,
-                    )
-                    active_battles[session_id] = (state, strategy)
+                    if active_drone_count(state) == 0:
+                        battle_paused = True
+                        if not debrief_sent:
+                            debrief_sent = True
+                            asyncio.create_task(broadcast_debrief(session_id, state, strategy))
+                        await stop_tournament_for_battle_end()
+                    else:
+                        if not debrief_sent:
+                            debrief_sent = True
+                            asyncio.create_task(broadcast_debrief(session_id, state, strategy))
+                        params = tournament.best.params if tournament.best else None
+                        persistent_assets = state.defense_assets
+                        persistent_terrain = state.terrain_zones
+                        state, strategy = make_battle(
+                            session_id=session_id,
+                            strategy_params=params,
+                            defense_assets=persistent_assets,
+                            terrain_zones=persistent_terrain,
+                        )
+                        debrief_sent = False
+                        active_battles[session_id] = (state, strategy)
 
             await manager.broadcast(session_id, serialize_state(state))
             await asyncio.sleep(DT / simulation_speed)
