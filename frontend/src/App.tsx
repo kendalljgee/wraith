@@ -3,7 +3,7 @@ import EvolutionPanel from './components/EvolutionPanel'
 import { useBattleSocket } from './hooks/useBattleSocket'
 import BattleCanvas from './renderer/BattleCanvas'
 import { useStore } from './store/battleStore'
-import type { DefenseAssetType, TerrainZone } from './store/battleStore'
+import type { DefenseAssetType } from './store/battleStore'
 
 const SESSION_ID = 'dev-session-001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
@@ -54,7 +54,6 @@ export default function App() {
     addDefenseAsset,
     moveDefenseAsset,
     removeDefenseAsset,
-    setTerrainZones,
     resetScenario,
   } = useStore()
   const {
@@ -64,8 +63,8 @@ export default function App() {
     describeTerrain,
   } = useBattleSocket(SESSION_ID)
 
-  const alive = drones.filter(d => d.alive).length
-  const disabled = drones.length - alive
+  const active = drones.filter(d => d.alive && !d.jammed && !d.spoofed).length
+  const disabled = drones.filter(d => !d.alive || d.jammed || d.spoofed).length
   const total = drones.length
   const [challengeActive, setChallengeActive] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
@@ -176,7 +175,6 @@ export default function App() {
 
   function applyTerrainPrompt() {
     if (!terrainPrompt.trim()) return
-    setTerrainZones(terrainFromPrompt(terrainPrompt))
     describeTerrain({ description: terrainPrompt })
   }
 
@@ -242,7 +240,7 @@ export default function App() {
         <div className="border border-wraith-border rounded p-3">
           <div className="text-slate-500 uppercase tracking-widest mb-1">Drones Active</div>
           <div className="text-slate-200 text-sm">
-            {alive}<span className="text-slate-500">/{total}</span>
+            {active}<span className="text-slate-500">/{total}</span>
           </div>
         </div>
         <div className="border border-wraith-border rounded p-3">
@@ -354,8 +352,8 @@ export default function App() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') applyTerrainPrompt()
               }}
-              placeholder="terrain like Kabul, Afghanistan"
-              className="w-56 text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300 placeholder:text-slate-600"
+              placeholder="Specify terrain type or location"
+              className="w-72 text-xs bg-transparent border border-wraith-border rounded px-2 py-1 text-slate-300 placeholder:text-slate-600"
             />
             <button
               onClick={applyTerrainPrompt}
@@ -433,53 +431,4 @@ export default function App() {
       </div>
     </div>
   )
-}
-
-function terrainFromPrompt(prompt: string): TerrainZone[] {
-  const text = prompt.toLowerCase()
-  if (text.includes('kabul') || text.includes('afghanistan')) {
-    return [
-      { id: 'kabul_urban_basin', x: 255, y: 210, width: 290, height: 170, type: 'urban', label: 'Dense urban basin' },
-      { id: 'kabul_ridge_west', x: 85, y: 285, width: 630, height: 65, type: 'ridge', label: 'Mountain ridge line' },
-      { id: 'kabul_rf_shadow', x: 510, y: 115, width: 150, height: 210, type: 'rf_shadow', label: 'RF shadow' },
-    ]
-  }
-  if (text.includes('new york') || text.includes('nyc') || text.includes('manhattan')) {
-    return [
-      { id: 'nyc_highrise_core', x: 255, y: 155, width: 250, height: 295, type: 'urban', label: 'High-rise urban canyon' },
-      { id: 'nyc_water_west', x: 70, y: 95, width: 120, height: 410, type: 'water', label: 'River corridor' },
-      { id: 'nyc_water_east', x: 610, y: 90, width: 105, height: 420, type: 'water', label: 'River corridor' },
-    ]
-  }
-  if (text.includes('phoenix') || text.includes('arizona') || text.includes('sonoran')) {
-    return [
-      { id: 'phoenix_desert_basin', x: 135, y: 145, width: 530, height: 330, type: 'desert', label: 'Desert basin' },
-      { id: 'phoenix_urban_grid', x: 285, y: 220, width: 230, height: 145, type: 'urban', label: 'Low-rise urban grid' },
-      { id: 'phoenix_ridge_south', x: 120, y: 430, width: 560, height: 55, type: 'ridge', label: 'Desert ridgeline' },
-    ]
-  }
-
-  const zones: TerrainZone[] = []
-  if (['ocean', 'oceanic', 'maritime', 'sea', 'coastal', 'island'].some(word => text.includes(word))) {
-    zones.push({ id: 'generated_water', x: 70, y: 95, width: 660, height: 395, type: 'water', label: 'Open water' })
-    zones.push({ id: 'generated_littoral', x: 95, y: 395, width: 610, height: 55, type: 'urban', label: 'Littoral objective zone' })
-  }
-  if (['desert', 'arid', 'sand', 'dry'].some(word => text.includes(word))) {
-    zones.push({ id: 'generated_desert', x: 135, y: 145, width: 530, height: 330, type: 'desert', label: 'Open desert' })
-  }
-  if (['city', 'urban', 'dense', 'buildings', 'downtown'].some(word => text.includes(word))) {
-    zones.push({ id: 'generated_urban', x: 250, y: 205, width: 300, height: 190, type: 'urban', label: 'Urban clutter' })
-  }
-  if (['mountain', 'mountainous', 'ridge', 'valley', 'hills', 'alpine'].some(word => text.includes(word))) {
-    zones.push({ id: 'generated_ridge_north', x: 70, y: 155, width: 660, height: 70, type: 'ridge', label: 'Mountain ridge' })
-    zones.push({ id: 'generated_valley', x: 155, y: 280, width: 490, height: 105, type: 'desert', label: 'Valley floor' })
-    zones.push({ id: 'generated_ridge_south', x: 115, y: 430, width: 570, height: 60, type: 'ridge', label: 'Terrain masking ridge' })
-  }
-  if (['rf', 'jam', 'shadow', 'dead zone', 'canyon'].some(word => text.includes(word))) {
-    zones.push({ id: 'generated_rf_shadow', x: 470, y: 140, width: 180, height: 230, type: 'rf_shadow', label: 'RF shadow' })
-  }
-
-  return zones.length > 0
-    ? zones
-    : [{ id: 'generated_mixed', x: 150, y: 145, width: 500, height: 330, type: 'desert', label: 'Generated terrain area' }]
 }

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from swarm import DefenseAsset, HEIGHT, TerrainZone, WIDTH, make_battle, tick, serialize_state, DT
 from tournament import tournament
-from ai_client import complete
+from ai_client import complete, complete_system
 import asyncio
 import json
 import re
@@ -119,38 +119,6 @@ TERRAIN_PRESETS = {
     "rf_shadow": [
         TerrainZone("rf_shadow_north", 180.0, 120.0, 180.0, 220.0, "rf_shadow", "RF shadow"),
         TerrainZone("rf_shadow_south", 500.0, 300.0, 160.0, 180.0, "rf_shadow", "RF shadow"),
-    ],
-}
-KNOWN_TERRAIN_PROFILES = {
-    "kabul": [
-        TerrainZone("kabul_urban_basin", 255.0, 210.0, 290.0, 170.0, "urban", "Dense urban basin"),
-        TerrainZone("kabul_ridge_west", 85.0, 285.0, 630.0, 65.0, "ridge", "Mountain ridge line"),
-        TerrainZone("kabul_rf_shadow", 510.0, 115.0, 150.0, 210.0, "rf_shadow", "RF shadow"),
-    ],
-    "afghanistan": [
-        TerrainZone("kabul_urban_basin", 255.0, 210.0, 290.0, 170.0, "urban", "Dense urban basin"),
-        TerrainZone("kabul_ridge_west", 85.0, 285.0, 630.0, 65.0, "ridge", "Mountain ridge line"),
-        TerrainZone("kabul_rf_shadow", 510.0, 115.0, 150.0, 210.0, "rf_shadow", "RF shadow"),
-    ],
-    "new york": [
-        TerrainZone("nyc_highrise_core", 255.0, 155.0, 250.0, 295.0, "urban", "High-rise urban canyon"),
-        TerrainZone("nyc_water_west", 70.0, 95.0, 120.0, 410.0, "water", "River corridor"),
-        TerrainZone("nyc_water_east", 610.0, 90.0, 105.0, 420.0, "water", "River corridor"),
-    ],
-    "nyc": [
-        TerrainZone("nyc_highrise_core", 255.0, 155.0, 250.0, 295.0, "urban", "High-rise urban canyon"),
-        TerrainZone("nyc_water_west", 70.0, 95.0, 120.0, 410.0, "water", "River corridor"),
-        TerrainZone("nyc_water_east", 610.0, 90.0, 105.0, 420.0, "water", "River corridor"),
-    ],
-    "phoenix": [
-        TerrainZone("phoenix_desert_basin", 135.0, 145.0, 530.0, 330.0, "desert", "Desert basin"),
-        TerrainZone("phoenix_urban_grid", 285.0, 220.0, 230.0, 145.0, "urban", "Low-rise urban grid"),
-        TerrainZone("phoenix_ridge_south", 120.0, 430.0, 560.0, 55.0, "ridge", "Desert ridgeline"),
-    ],
-    "arizona": [
-        TerrainZone("phoenix_desert_basin", 135.0, 145.0, 530.0, 330.0, "desert", "Desert basin"),
-        TerrainZone("phoenix_urban_grid", 285.0, 220.0, 230.0, 145.0, "urban", "Low-rise urban grid"),
-        TerrainZone("phoenix_ridge_south", 120.0, 430.0, 560.0, 55.0, "ridge", "Desert ridgeline"),
     ],
 }
 # ── routes ─────────────────────────────────────────────────
@@ -285,13 +253,58 @@ def payload_radius(payload: dict, asset_type: str) -> float:
     return round(clamp(radius, 20.0, 320.0), 1)
 
 
-def terrain_from_description(description: str) -> list[TerrainZone]:
+async def terrain_from_description(description: str) -> list[TerrainZone]:
+    try:
+        return await generate_terrain_with_llm(description)
+    except Exception as e:
+        print(f"Terrain generation failed, using fallback: {e}")
+        return procedural_terrain_from_description(description)
+
+
+async def generate_terrain_with_llm(description: str) -> list[TerrainZone]:
+    result = await complete_system(
+        system=(
+            "You generate compact battlefield terrain overlays for an 800m by 600m top-down canvas. "
+            "Return JSON only with a top-level zones array. Create 2-5 zones that match the requested "
+            "terrain type or location. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
+            "Each zone needs id, x, y, width, height, type, label. Coordinates are meters from the top-left, "
+            "x 0-800, y 0-600. Keep labels short and tactical. Do not use markdown."
+        ),
+        user=f"Terrain request: {description}",
+        model_key="fast",
+        max_tokens=700,
+    )
+    clean = result.strip()
+    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", clean, re.DOTALL)
+    if fence_match:
+        clean = fence_match.group(1).strip()
+    data = json.loads(clean)
+    zones = data.get("zones", data if isinstance(data, list) else [])
+    parsed = [coerce_terrain_zone(zone, index) for index, zone in enumerate(zones[:5])]
+    return [zone for zone in parsed if zone is not None] or procedural_terrain_from_description(description)
+
+
+def coerce_terrain_zone(zone: dict, index: int) -> TerrainZone | None:
+    if not isinstance(zone, dict):
+        return None
+    terrain_type = zone.get("type")
+    if terrain_type not in {"urban", "ridge", "rf_shadow", "desert", "water"}:
+        return None
+    try:
+        x = clamp(float(zone.get("x")), 0.0, WIDTH - 20.0)
+        y = clamp(float(zone.get("y")), 0.0, HEIGHT - 20.0)
+        width = clamp(float(zone.get("width")), 30.0, WIDTH - x)
+        height = clamp(float(zone.get("height")), 30.0, HEIGHT - y)
+    except (TypeError, ValueError):
+        return None
+    label = str(zone.get("label") or terrain_type.replace("_", " ").title())[:32]
+    zone_id = re.sub(r"[^a-z0-9_]+", "_", str(zone.get("id") or f"generated_{index}").lower())
+    return TerrainZone(zone_id, x, y, width, height, terrain_type, label)
+
+
+def procedural_terrain_from_description(description: str) -> list[TerrainZone]:
     text = description.lower()
     zones: list[TerrainZone] = []
-
-    for key, profile in KNOWN_TERRAIN_PROFILES.items():
-        if key in text:
-            return profile
 
     if any(word in text for word in ["ocean", "oceanic", "maritime", "sea", "coastal", "island"]):
         zones.append(TerrainZone("generated_water", 70.0, 95.0, 660.0, 395.0, "water", "Open water"))
@@ -408,7 +421,7 @@ async def handle_battle_command(session_id: str, message: dict) -> None:
 
     if message_type == "describe_terrain":
         description = str(message.get("description") or "")
-        state.terrain_zones = terrain_from_description(description)
+        state.terrain_zones = await terrain_from_description(description)
         active_battles[session_id] = (state, strategy)
         return
 

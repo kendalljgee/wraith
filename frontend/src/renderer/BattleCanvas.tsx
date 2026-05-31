@@ -6,6 +6,7 @@ import type { DefenseAsset, DefenseAssetType, Drone, TerrainZone } from '../stor
 const WIDTH = 800
 const HEIGHT = 600
 const CENTER_GRAB_RADIUS = 12
+const GRID_METERS = 100
 
 const ASSET_COLORS: Record<DefenseAssetType, number> = {
   jammer: 0xf59e0b,
@@ -169,13 +170,13 @@ export default function BattleCanvas({
       commsLayer.current = cLayer
 
       const grid = new PIXI.Graphics()
-      for (let x = 0; x <= WIDTH; x += 80) {
+      for (let x = 0; x <= WIDTH; x += GRID_METERS) {
         grid.moveTo(x, 0).lineTo(x, HEIGHT)
       }
-      for (let y = 0; y <= HEIGHT; y += 60) {
+      for (let y = 0; y <= HEIGHT; y += GRID_METERS) {
         grid.moveTo(0, y).lineTo(WIDTH, y)
       }
-      grid.stroke({ color: 0x1e2d3d, width: 0.5, alpha: 0.5 })
+      grid.stroke({ color: 0x2d4054, width: 0.75, alpha: 0.65 })
       app.stage.addChildAt(grid, 0)
 
       const obj = new PIXI.Graphics()
@@ -344,6 +345,19 @@ export default function BattleCanvas({
       style={{ width: WIDTH, height: HEIGHT }}
     >
       <div ref={canvasRef} className="absolute inset-0" />
+      <div className="pointer-events-none absolute inset-0 text-[10px] text-slate-500">
+        <div className="absolute left-1 top-1">0,0m</div>
+        {Array.from({ length: WIDTH / GRID_METERS }, (_, index) => (index + 1) * GRID_METERS).map((x) => (
+          <div key={`x-${x}`} className="absolute top-1 -translate-x-1/2" style={{ left: x }}>
+            {x}m
+          </div>
+        ))}
+        {Array.from({ length: HEIGHT / GRID_METERS }, (_, index) => (index + 1) * GRID_METERS).map((y) => (
+          <div key={`y-${y}`} className="absolute left-1 -translate-y-1/2" style={{ top: y }}>
+            {y}m
+          </div>
+        ))}
+      </div>
       <div className="pointer-events-none absolute inset-0">
         {terrainZones.map((zone) => (
           <div

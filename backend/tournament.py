@@ -84,12 +84,13 @@ class Tournament:
 
             # Build generation record for UI
             best_child = max(children, key=lambda c: c.fitness)
+            llm_child = next((child for child in children if child.is_llm_guided), None)
             record = {
                 "number":    self.generation,
                 "fitness":   best_child.fitness,
                 "mutation":  best_child.params.get("type", "unknown"),
-                "isLLM":     best_child.is_llm_guided,
-                "reasoning": best_child.llm_reasoning or "",
+                "isLLM":     llm_child is not None,
+                "reasoning": llm_child.llm_reasoning if llm_child else "",
                 "params":    best_child.params,
             }
             self.history.append(record)
