@@ -134,6 +134,7 @@ export default function App() {
   async function startSimulation() {
     await resetAll()
     setPage('simulation')
+    window.scrollTo({ top: 0 })
   }
 
   async function goHome() {
@@ -147,6 +148,7 @@ export default function App() {
   async function returnToResetSimulation() {
     await resetAll()
     setPage('simulation')
+    window.scrollTo({ top: 0 })
   }
 
   async function updateBattleSpeed(speed: number) {
@@ -348,23 +350,23 @@ export default function App() {
         >
           Home
         </button>
-        <div className="mx-auto max-w-6xl grid lg:grid-cols-[0.9fr_1.1fr] gap-5">
-          <div className="border border-wraith-border rounded p-4">
-            <div className="text-xs uppercase tracking-widest text-slate-500 mb-3">Defense Layout</div>
-            <DefenseLayoutPreview assets={defenseAssets} />
+        <div className="grid lg:grid-cols-[460px_minmax(0,1fr)] gap-5 mr-4">
+          <div>
+            <div className="border border-wraith-border rounded p-4">
+              <div className="text-xs uppercase tracking-widest text-slate-500 mb-3">Defense Layout</div>
+              <DefenseLayoutPreview assets={defenseAssets} />
+            </div>
+            <button
+              onClick={() => void returnToResetSimulation()}
+              className="mt-4 text-sm bg-threat-low text-wraith-bg border border-threat-low rounded px-5 py-2 hover:bg-slate-100 hover:border-slate-100 transition-colors"
+            >
+              Run New Simulation
+            </button>
           </div>
           <div className="border border-wraith-border rounded p-5">
             <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">AI Battle Debrief</div>
             <h1 className="text-3xl text-slate-50 mb-4">Engagement Summary</h1>
-            <div className="text-sm leading-6 text-slate-300 whitespace-pre-wrap break-words">
-              {battleDebrief || 'No debrief is available yet.'}
-            </div>
-            <button
-              onClick={() => void returnToResetSimulation()}
-              className="mt-6 text-sm bg-threat-low text-wraith-bg border border-threat-low rounded px-5 py-2 hover:bg-slate-100 hover:border-slate-100 transition-colors"
-            >
-              Return To Reset Simulation
-            </button>
+            <DebriefContent text={battleDebrief} />
           </div>
         </div>
       </div>
@@ -464,8 +466,9 @@ export default function App() {
         </div>
       </div>
 
-      {challengeActive && (
-        <div className="border border-wraith-border rounded p-3 mb-4 flex items-center justify-between gap-4">
+      <div className={`border border-wraith-border rounded p-3 mb-4 flex items-center justify-between gap-4 min-h-[82px] transition-opacity ${
+        challengeActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
+      }`}>
           <div className="flex items-center gap-2">
             {ASSET_TOOLS.map(tool => (
               <button
@@ -585,8 +588,7 @@ export default function App() {
               />
             </label>
           </div>
-        </div>
-      )}
+      </div>
 
       <div className="flex gap-4">
         <div className="shrink-0">
@@ -656,7 +658,10 @@ export default function App() {
                 Stay Here
               </button>
               <button
-                onClick={() => setPage('debrief')}
+                onClick={() => {
+                  setPage('debrief')
+                  window.scrollTo({ top: 0 })
+                }}
                 className="text-xs bg-threat-low text-wraith-bg border border-threat-low rounded px-3 py-2 hover:bg-slate-100"
               >
                 See Debrief
@@ -688,6 +693,59 @@ function VisualKey({ color, label, detail }: { color: string; label: string; det
       <div className="text-slate-500">{detail}</div>
     </div>
   )
+}
+
+function DebriefContent({ text }: { text: string | null }) {
+  const sections = parseDebrief(text || 'No debrief is available yet.')
+
+  return (
+    <div className="space-y-4">
+      {sections.map((section, index) => (
+        <section key={`${section.title}-${index}`} className="border border-wraith-border rounded p-4 bg-wraith-panel/20">
+          <h2 className="text-sm uppercase tracking-widest text-slate-400 mb-3">{section.title}</h2>
+          <div className="space-y-2">
+            {section.lines.map((line, lineIndex) => (
+              <p key={`${line}-${lineIndex}`} className="text-sm leading-6 text-slate-300 break-words">
+                {line}
+              </p>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function parseDebrief(text: string) {
+  const cleaned = text
+    .replace(/\*\*/g, '')
+    .replace(/__/g, '')
+    .replace(/\*/g, '')
+    .replace(/^\s*[-•]\s*/gm, '')
+    .trim()
+
+  const rawBlocks = cleaned.split(/\n{2,}/).map(block => block.trim()).filter(Boolean)
+  const sections: Array<{ title: string; lines: string[] }> = []
+
+  rawBlocks.forEach((block, index) => {
+    const lines = block.split('\n').map(line => line.trim()).filter(Boolean)
+    if (lines.length === 0) return
+
+    const first = lines[0].replace(/:$/, '')
+    const firstLooksLikeTitle = first.length < 54 && /^[A-Z0-9\s/()-]+$/.test(first)
+    sections.push({
+      title: firstLooksLikeTitle ? titleCase(first) : index === 0 ? 'Overview' : `Observation ${index + 1}`,
+      lines: firstLooksLikeTitle ? lines.slice(1) : lines,
+    })
+  })
+
+  return sections.length > 0 ? sections : [{ title: 'Overview', lines: [cleaned] }]
+}
+
+function titleCase(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\b\w/g, char => char.toUpperCase())
 }
 
 function DefenseLayoutPreview({ assets }: { assets: Array<{ id: string; x: number; y: number; type: DefenseAssetType; radius: number; name?: string }> }) {
