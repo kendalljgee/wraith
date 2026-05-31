@@ -222,7 +222,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-6">
         <main className="mx-auto max-w-6xl">
-          <section className="min-h-[calc(100vh-48px)] flex flex-col justify-center">
+          <section className="py-6">
             <div className="mb-8">
               <div className="text-xs text-slate-500 uppercase tracking-[0.35em] mb-3">
                 Autonomous Red Team System
@@ -288,7 +288,7 @@ export default function App() {
                 <div className="mt-4">
                   <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Imported Assets</div>
                   {customSpecs.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-56 overflow-y-auto">
                       {customSpecs.map(spec => (
                         <div key={spec.id} className="border border-wraith-border rounded px-3 py-2 text-xs flex items-center justify-between gap-3">
                           <span className="text-slate-200">{spec.name}</span>
