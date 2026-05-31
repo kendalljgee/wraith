@@ -83,6 +83,7 @@ export default function App() {
   const [removeMode, setRemoveMode] = useState(false)
   const [battleSpeed, setBattleSpeed] = useState(1)
   const [debriefPromptDismissed, setDebriefPromptDismissed] = useState(false)
+  const [debriefPromptPending, setDebriefPromptPending] = useState(false)
   const [battleHasStarted, setBattleHasStarted] = useState(false)
   const [customSpecs, setCustomSpecs] = useState<AssetSpec[]>([])
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null)
@@ -105,14 +106,17 @@ export default function App() {
     setBattleHasStarted(true)
     setBattleDebrief(null)
     setDebriefPromptDismissed(false)
+    setDebriefPromptPending(false)
     await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
     await fetch(`${API_URL}/api/tournament/restart?session_id=${SESSION_ID}`, { method: 'POST' })
   }
 
-  async function endSimulation() {
+  function endSimulation() {
     setBattleHasStarted(true)
     setPaused(true)
-    await fetch(`${API_URL}/api/battle/end?session_id=${SESSION_ID}`, { method: 'POST' })
+    setDebriefPromptDismissed(false)
+    setDebriefPromptPending(true)
+    void fetch(`${API_URL}/api/battle/end?session_id=${SESSION_ID}`, { method: 'POST' })
   }
 
   async function togglePause() {
@@ -127,6 +131,7 @@ export default function App() {
     setChallengeActive(true)
     setRemoveMode(false)
     setDebriefPromptDismissed(false)
+    setDebriefPromptPending(false)
     setBattleHasStarted(false)
     setTerrainPrompt('')
     resetScenario()
@@ -144,6 +149,7 @@ export default function App() {
     setPaused(true)
     setChallengeActive(true)
     setBattleHasStarted(false)
+    setDebriefPromptPending(false)
     await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
     await fetch(`${API_URL}/api/tournament/pause`, { method: 'POST' })
   }
@@ -645,17 +651,24 @@ export default function App() {
           <EvolutionPanel challengeActive={challengeActive} />
         </div>
       </div>
-      {battleHasStarted && battleDebrief && !debriefPromptDismissed && (active === 0 || paused) && (
+      {battleHasStarted && (battleDebrief || debriefPromptPending) && !debriefPromptDismissed && (active === 0 || paused) && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="border border-wraith-border rounded bg-wraith-bg p-5 max-w-md w-full">
-            <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Battle Complete</div>
+            <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">
+              {battleDebrief ? 'Battle Complete' : 'Ending Simulation'}
+            </div>
             <h2 className="text-xl text-slate-100 mb-3">View the AI debrief?</h2>
             <p className="text-sm text-slate-400 mb-5">
-              WRAITH generated an after-action summary of the terrain, asset placement, battle outcome, and recommendations.
+              {battleDebrief
+                ? 'WRAITH generated an after-action summary of the terrain, asset placement, battle outcome, and recommendations.'
+                : 'WRAITH is freezing the current battle state and generating the after-action summary now.'}
             </p>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setDebriefPromptDismissed(true)}
+                onClick={() => {
+                  setDebriefPromptDismissed(true)
+                  setDebriefPromptPending(false)
+                }}
                 className="text-xs border border-wraith-border rounded px-3 py-2 text-slate-400 hover:text-slate-100"
               >
                 Stay Here
@@ -665,9 +678,14 @@ export default function App() {
                   setPage('debrief')
                   window.scrollTo({ top: 0 })
                 }}
-                className="text-xs bg-threat-low text-wraith-bg border border-threat-low rounded px-3 py-2 hover:bg-slate-100"
+                disabled={!battleDebrief}
+                className={`text-xs border rounded px-3 py-2 transition-colors ${
+                  battleDebrief
+                    ? 'bg-threat-low text-wraith-bg border-threat-low hover:bg-slate-100'
+                    : 'border-wraith-border text-slate-600 cursor-wait'
+                }`}
               >
-                See Debrief
+                {battleDebrief ? 'See Debrief' : 'Generating...'}
               </button>
             </div>
           </div>

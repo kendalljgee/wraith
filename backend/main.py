@@ -149,8 +149,10 @@ async def pause_battle():
 
 
 @app.post("/api/battle/resume")
-async def resume_battle():
+async def resume_battle(session_id: str | None = None, fresh: bool = False):
     global battle_paused
+    if fresh:
+        await arm_fresh_battle(session_id=session_id)
     battle_paused = False
     return {"status": "resumed"}
 
@@ -273,6 +275,25 @@ async def restart_tournament(session_id: str | None = None):
             "generation": 0,
             "replace": True,
         })
+
+
+async def arm_fresh_battle(session_id: str | None = None):
+    target_session = session_id if session_id in active_battles else None
+    if target_session is None and active_battles:
+        target_session = next(iter(active_battles.keys()))
+    if target_session is None:
+        return
+
+    current_state, _ = active_battles[target_session]
+    params = tournament.best.params if tournament.best else None
+    state, strategy = make_battle(
+        session_id=target_session,
+        strategy_params=params,
+        defense_assets=current_state.defense_assets,
+        terrain_zones=current_state.terrain_zones,
+    )
+    active_battles[target_session] = (state, strategy)
+    await manager.broadcast(target_session, serialize_state(state))
 
 
 def clamp(value: float, lo: float, hi: float) -> float:
