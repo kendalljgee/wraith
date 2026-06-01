@@ -114,6 +114,15 @@ export default function App() {
   const selectedReload = Math.max(0, specReload || 0)
   const selectedEffectiveness = Math.max(0, Math.min(1, specEffectiveness || 0))
 
+  async function apiFetch(path: string, init?: RequestInit) {
+    try {
+      return await fetch(`${API_URL}${path}`, init)
+    } catch (error) {
+      console.error(`WRAITH API request failed: ${path}`, error)
+      return null
+    }
+  }
+
   useEffect(() => {
     function handlePopState() {
       setPage(pageFromPath(window.location.pathname))
@@ -137,8 +146,8 @@ export default function App() {
     setBattleDebrief(null)
     setDebriefPromptDismissed(false)
     setDebriefPromptPending(false)
-    await fetch(`${API_URL}/api/battle/resume`, { method: 'POST' })
-    await fetch(`${API_URL}/api/tournament/restart?session_id=${SESSION_ID}`, { method: 'POST' })
+    await apiFetch('/api/battle/resume', { method: 'POST' })
+    await apiFetch(`/api/tournament/restart?session_id=${SESSION_ID}`, { method: 'POST' })
   }
 
   function endSimulation() {
@@ -146,14 +155,14 @@ export default function App() {
     setPaused(true)
     setDebriefPromptDismissed(false)
     setDebriefPromptPending(true)
-    void fetch(`${API_URL}/api/battle/end?session_id=${SESSION_ID}`, { method: 'POST' })
+    void apiFetch(`/api/battle/end?session_id=${SESSION_ID}`, { method: 'POST' })
   }
 
   async function togglePause() {
     const nextPaused = !paused
     setPaused(nextPaused)
-    await fetch(`${API_URL}/api/battle/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
-    await fetch(`${API_URL}/api/tournament/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+    await apiFetch(`/api/battle/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
+    await apiFetch(`/api/tournament/${nextPaused ? 'pause' : 'resume'}`, { method: 'POST' })
   }
 
   async function resetAll() {
@@ -165,7 +174,7 @@ export default function App() {
     setBattleHasStarted(false)
     setTerrainPrompt('')
     resetScenario()
-    await fetch(`${API_URL}/api/system/reset`, { method: 'POST' })
+    await apiFetch('/api/system/reset', { method: 'POST' })
   }
 
   async function startSimulation() {
@@ -179,8 +188,8 @@ export default function App() {
     setChallengeActive(true)
     setBattleHasStarted(false)
     setDebriefPromptPending(false)
-    await fetch(`${API_URL}/api/battle/pause`, { method: 'POST' })
-    await fetch(`${API_URL}/api/tournament/pause`, { method: 'POST' })
+    void apiFetch('/api/battle/pause', { method: 'POST' })
+    void apiFetch('/api/tournament/pause', { method: 'POST' })
   }
 
   async function returnToResetSimulation() {
@@ -191,7 +200,7 @@ export default function App() {
   async function updateBattleSpeed(speed: number) {
     setBattleSpeed(speed)
     sendSpeed({ speed })
-    await fetch(`${API_URL}/api/battle/speed?speed=${speed}`, { method: 'POST' })
+    await apiFetch(`/api/battle/speed?speed=${speed}`, { method: 'POST' })
   }
 
   function selectAssetTool(type: DefenseAssetType) {
