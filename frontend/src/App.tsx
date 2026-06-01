@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import EvolutionPanel from './components/EvolutionPanel'
 import { useBattleSocket } from './hooks/useBattleSocket'
 import BattleCanvas from './renderer/BattleCanvas'
@@ -52,6 +52,20 @@ const threatColors = {
   STANDOFF: 'text-threat-low',
 }
 
+type Page = 'landing' | 'simulation' | 'debrief'
+
+const pagePaths: Record<Page, string> = {
+  landing: '/',
+  simulation: '/simulation',
+  debrief: '/debrief',
+}
+
+function pageFromPath(pathname: string): Page {
+  if (pathname.startsWith('/simulation')) return 'simulation'
+  if (pathname.startsWith('/debrief')) return 'debrief'
+  return 'landing'
+}
+
 export default function App() {
   const {
     threatLevel,
@@ -77,7 +91,7 @@ export default function App() {
   const disabled = drones.filter(d => !d.alive || d.jammed || d.spoofed).length
   const total = drones.length
   const [challengeActive, setChallengeActive] = useState(true)
-  const [page, setPage] = useState<'landing' | 'simulation' | 'debrief'>('landing')
+  const [page, setPage] = useState<Page>(() => pageFromPath(window.location.pathname))
   const [selectedAsset, setSelectedAsset] = useState<DefenseAssetType>('jammer')
   const [paused, setPaused] = useState(true)
   const [removeMode, setRemoveMode] = useState(false)
@@ -99,6 +113,22 @@ export default function App() {
   const selectedRadius = Math.max(1, specRadius || selectedTool.radius)
   const selectedReload = Math.max(0, specReload || 0)
   const selectedEffectiveness = Math.max(0, Math.min(1, specEffectiveness || 0))
+
+  useEffect(() => {
+    function handlePopState() {
+      setPage(pageFromPath(window.location.pathname))
+      window.scrollTo({ top: 0 })
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  function navigateTo(nextPage: Page) {
+    setPage(nextPage)
+    window.history.pushState({}, '', pagePaths[nextPage])
+    window.scrollTo({ top: 0 })
+  }
 
   async function runDefense() {
     setChallengeActive(false)
@@ -140,12 +170,11 @@ export default function App() {
 
   async function startSimulation() {
     await resetAll()
-    setPage('simulation')
-    window.scrollTo({ top: 0 })
+    navigateTo('simulation')
   }
 
   async function goHome() {
-    setPage('landing')
+    navigateTo('landing')
     setPaused(true)
     setChallengeActive(true)
     setBattleHasStarted(false)
@@ -156,8 +185,7 @@ export default function App() {
 
   async function returnToResetSimulation() {
     await resetAll()
-    setPage('simulation')
-    window.scrollTo({ top: 0 })
+    navigateTo('simulation')
   }
 
   async function updateBattleSpeed(speed: number) {
@@ -675,8 +703,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
-                  setPage('debrief')
-                  window.scrollTo({ top: 0 })
+                  navigateTo('debrief')
                 }}
                 disabled={!battleDebrief}
                 className={`text-xs border rounded px-3 py-2 transition-colors ${
