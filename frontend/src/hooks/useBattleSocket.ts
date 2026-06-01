@@ -103,7 +103,13 @@ export function useBattleSocket(sessionId: string) {
   useEffect(() => {
     if (!sessionId) return
 
-    ws.current = new WebSocket(`${WS_URL}/ws/battle/${sessionId}`)
+    try {
+      ws.current = new WebSocket(`${WS_URL}/ws/battle/${sessionId}`)
+    } catch (error) {
+      console.error('WRAITH socket connection failed:', error)
+      setConnected(false)
+      return
+    }
 
     ws.current.onopen = () => setConnected(true)
     ws.current.onclose = () => setConnected(false)
