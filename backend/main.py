@@ -354,7 +354,14 @@ async def generate_terrain_with_llm(description: str) -> list[TerrainZone]:
 def parse_terrain_llm_result(description: str, result: str) -> list[TerrainZone]:
     clean = extract_json_payload(result)
     data = json.loads(clean)
-    zones = data.get("zones", data if isinstance(data, list) else [])
+    if isinstance(data, dict):
+        zones = data.get("zones", [])
+    elif isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict) and "zones" in data[0]:
+        zones = data[0].get("zones", [])
+    elif isinstance(data, list):
+        zones = data
+    else:
+        zones = []
     parsed = [coerce_terrain_zone(zone, index) for index, zone in enumerate(zones[:5])]
     valid_zones = [zone for zone in parsed if zone is not None]
     print(
