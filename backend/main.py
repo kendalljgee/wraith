@@ -453,11 +453,11 @@ async def generate_debrief(state, strategy) -> str:
                 "for a drone defense simulation. Include: outcome, terrain effects, asset placement "
                 "assessment using meter coordinates, what worked, vulnerabilities, and next test recommendations. "
                 "Do not invent weapon models beyond the provided assets. Use clear section headings and complete "
-                "sentences. Avoid markdown bold styling."
+                "sentences. Avoid markdown bold styling. Keep the debrief under 450 words."
             ),
             user=json.dumps(summary),
-            model_key="analyst",
-            max_tokens=1200,
+            model_key="fast",
+            max_tokens=700,
         )
     except Exception as e:
         print(f"Debrief generation failed, using fallback: {e}")

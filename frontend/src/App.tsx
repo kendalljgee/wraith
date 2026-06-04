@@ -418,7 +418,7 @@ export default function App() {
           <div className="border border-wraith-border rounded p-5">
             <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">AI Battle Debrief</div>
             <h1 className="text-3xl text-slate-50 mb-4">Engagement Summary</h1>
-            <DebriefContent text={battleDebrief} />
+            <DebriefContent text={battleDebrief} loading={!battleDebrief && debriefPromptPending} />
           </div>
         </div>
       </div>
@@ -720,14 +720,9 @@ export default function App() {
                 onClick={() => {
                   navigateTo('debrief')
                 }}
-                disabled={!battleDebrief}
-                className={`text-xs border rounded px-3 py-2 transition-colors ${
-                  battleDebrief
-                    ? 'bg-threat-low text-wraith-bg border-threat-low hover:bg-slate-100'
-                    : 'border-wraith-border text-slate-600 cursor-wait'
-                }`}
+                className="text-xs bg-threat-low text-wraith-bg border border-threat-low rounded px-3 py-2 hover:bg-slate-100 transition-colors"
               >
-                {battleDebrief ? 'See Debrief' : 'Generating...'}
+                {battleDebrief ? 'See Debrief' : 'Open Debrief'}
               </button>
             </div>
           </div>
@@ -751,11 +746,15 @@ function InstructionBlock({ title, items, variant = 'definitions' }: {
             variant === 'bullets' ? 'flex gap-2' : 'flex gap-2'
           }`}>
             {variant === 'bullets' && <span className="text-slate-500">•</span>}
-            <span>
-              <span className="text-slate-100 font-semibold">{item.label}</span>
-              <span className="text-slate-500">: </span>
-              {item.detail}
-            </span>
+            {variant === 'bullets' ? (
+              <span>{item.detail}</span>
+            ) : (
+              <span>
+                <span className="text-slate-100 font-semibold">{item.label}</span>
+                <span className="text-slate-500">: </span>
+                {item.detail}
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -775,7 +774,24 @@ function VisualKey({ color, label, detail }: { color: string; label: string; det
   )
 }
 
-function DebriefContent({ text }: { text: string | null }) {
+function DebriefContent({ text, loading = false }: { text: string | null; loading?: boolean }) {
+  if (loading) {
+    return (
+      <div className="border border-wraith-border rounded p-5 bg-wraith-panel/20">
+        <div className="text-xs uppercase tracking-widest text-slate-500 mb-3">Generating Debrief</div>
+        <div className="space-y-3">
+          <div className="h-3 w-2/3 rounded bg-slate-700/60 animate-pulse" />
+          <div className="h-3 w-full rounded bg-slate-800/70 animate-pulse" />
+          <div className="h-3 w-5/6 rounded bg-slate-800/70 animate-pulse" />
+          <div className="h-3 w-3/4 rounded bg-slate-800/70 animate-pulse" />
+        </div>
+        <p className="mt-5 text-sm text-slate-400 leading-6">
+          WRAITH is generating the after-action analysis from the final battle state, terrain, and defense layout.
+        </p>
+      </div>
+    )
+  }
+
   const sections = parseDebrief(text || 'No debrief is available yet.')
 
   return (
