@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -7,6 +8,8 @@
   --color-threat-low: #22c55e;
   --color-threat-elevated: #f59e0b;
   --color-threat-critical: #ef4444;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 html,
@@ -22,5 +25,5 @@ body {
   color: #f3f4f6;
   overflow-x: hidden;
   overflow-y: auto;
-  font-family: monospace;
+  font-family: var(--font-sans);
 }

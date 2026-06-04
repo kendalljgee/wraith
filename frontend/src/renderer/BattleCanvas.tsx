@@ -345,7 +345,7 @@ export default function BattleCanvas({
       style={{ width: WIDTH, height: HEIGHT }}
     >
       <div ref={canvasRef} className="absolute inset-0" />
-      <div className="pointer-events-none absolute inset-0 text-[10px] text-slate-500">
+      <div className="font-mono pointer-events-none absolute inset-0 text-[10px] text-slate-500">
         <div className="absolute left-1 top-1">0,0m</div>
         {Array.from({ length: WIDTH / GRID_METERS }, (_, index) => (index + 1) * GRID_METERS).map((x) => (
           <div key={`x-${x}`} className="absolute top-1 -translate-x-1/2" style={{ left: x }}>
@@ -362,7 +362,7 @@ export default function BattleCanvas({
         {terrainZones.map((zone) => (
           <div
             key={zone.id}
-            className="absolute rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-widest bg-wraith-bg/80"
+            className="font-mono absolute rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-widest bg-wraith-bg/80"
             style={{
               left: zone.x + 8,
               top: zone.y + 8,

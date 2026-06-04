@@ -268,11 +268,11 @@ export default function App() {
 
   if (page === 'landing') {
     return (
-      <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-6">
+      <div className="min-h-screen bg-wraith-bg text-slate-200 font-sans p-6">
         <main className="mx-auto max-w-6xl">
           <section className="py-6">
             <div className="mb-8">
-              <div className="text-xs text-slate-500 uppercase tracking-[0.35em] mb-3">
+              <div className="font-mono text-xs text-slate-500 uppercase tracking-[0.35em] mb-3">
                 Autonomous Red Team System
               </div>
               <h1 className="text-6xl md:text-7xl font-semibold text-slate-50 tracking-normal">WRAITH</h1>
@@ -327,7 +327,7 @@ export default function App() {
               </div>
 
               <div className="mt-5 border border-wraith-border rounded p-3">
-                <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Sample Terrain Prompts</div>
+                <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-2">Sample Terrain Prompts</div>
                 <div className="grid md:grid-cols-2 gap-2">
                   {TERRAIN_PROMPTS.map(prompt => (
                     <div key={prompt} className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-300">
@@ -361,13 +361,13 @@ export default function App() {
               </div>
 
               <div className="border border-wraith-border rounded p-4">
-                <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Imported Assets</div>
+                <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-2">Imported Assets</div>
                 {customSpecs.length > 0 ? (
                   <div className="grid md:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
                     {customSpecs.map(spec => (
                       <div key={spec.id} className="border border-wraith-border rounded px-3 py-2 text-xs flex items-center justify-between gap-3">
                         <span className="text-slate-200">{spec.name}</span>
-                        <span className="text-slate-500">{spec.type} · {spec.radius}m</span>
+                        <span className="font-mono text-slate-500">{spec.type} · {spec.radius}m</span>
                       </div>
                     ))}
                   </div>
@@ -395,7 +395,7 @@ export default function App() {
 
   if (page === 'debrief') {
     return (
-      <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-4">
+      <div className="min-h-screen bg-wraith-bg text-slate-200 font-sans p-4">
         <button
           onClick={() => void goHome()}
           className="mb-4 text-xs border border-wraith-border rounded px-3 py-2 text-slate-400 hover:text-slate-100"
@@ -405,7 +405,7 @@ export default function App() {
         <div className="grid lg:grid-cols-[460px_minmax(0,1fr)] gap-5 mr-4">
           <div>
             <div className="border border-wraith-border rounded p-4">
-              <div className="text-xs uppercase tracking-widest text-slate-500 mb-3">Defense Layout</div>
+              <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-3">Defense Layout</div>
               <DefenseLayoutPreview assets={defenseAssets} />
             </div>
             <button
@@ -416,7 +416,7 @@ export default function App() {
             </button>
           </div>
           <div className="border border-wraith-border rounded p-5">
-            <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">AI Battle Debrief</div>
+            <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-2">AI Battle Debrief</div>
             <h1 className="text-3xl text-slate-50 mb-4">Engagement Summary</h1>
             <DebriefContent text={battleDebrief} loading={!battleDebrief && debriefPromptPending} />
           </div>
@@ -426,7 +426,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-wraith-bg text-slate-200 font-mono p-4">
+    <div className="min-h-screen bg-wraith-bg text-slate-200 font-sans p-4">
       <div className="border border-wraith-border rounded p-3 mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
@@ -436,7 +436,7 @@ export default function App() {
             Home
           </button>
           <div>
-          <span className="text-xs text-slate-500 uppercase tracking-widest">
+          <span className="font-mono text-xs text-slate-500 uppercase tracking-widest">
             Autonomous Red Team System
           </span>
           <h1 className="text-lg font-medium text-slate-100 mt-0.5">WRAITH</h1>
@@ -484,7 +484,7 @@ export default function App() {
             </button>
           )}
 
-          <div className="flex items-center gap-2 text-xs">
+          <div className="font-mono flex items-center gap-2 text-xs">
             <div
               className={`w-1.5 h-1.5 rounded-full ${
                 connected ? 'bg-threat-low' : 'bg-threat-critical'
@@ -499,22 +499,22 @@ export default function App() {
 
       <div className="grid grid-cols-4 gap-3 text-xs mb-4">
         <div className="border border-wraith-border rounded p-3">
-          <div className="text-slate-500 uppercase tracking-widest mb-1">Threat Level</div>
+          <div className="font-mono text-slate-500 uppercase tracking-widest mb-1">Threat Level</div>
           <div className={`font-medium text-sm ${threatColors[threatLevel]}`}>{threatLevel}</div>
         </div>
         <div className="border border-wraith-border rounded p-3">
-          <div className="text-slate-500 uppercase tracking-widest mb-1">Drones Active</div>
-          <div className="text-slate-200 text-sm">
+          <div className="font-mono text-slate-500 uppercase tracking-widest mb-1">Drones Active</div>
+          <div className="font-mono text-slate-200 text-sm">
             {active}<span className="text-slate-500">/{total}</span>
           </div>
         </div>
         <div className="border border-wraith-border rounded p-3">
-          <div className="text-slate-500 uppercase tracking-widest mb-1">Drones Disabled</div>
-          <div className="text-slate-200 text-sm">{disabled}</div>
+          <div className="font-mono text-slate-500 uppercase tracking-widest mb-1">Drones Disabled</div>
+          <div className="font-mono text-slate-200 text-sm">{disabled}</div>
         </div>
         <div className="border border-wraith-border rounded p-3">
-          <div className="text-slate-500 uppercase tracking-widest mb-1">Defense Assets</div>
-          <div className="text-slate-200 text-sm">{defenseAssets.length}</div>
+          <div className="font-mono text-slate-500 uppercase tracking-widest mb-1">Defense Assets</div>
+          <div className="font-mono text-slate-200 text-sm">{defenseAssets.length}</div>
         </div>
       </div>
 
@@ -697,7 +697,7 @@ export default function App() {
       {battleHasStarted && (battleDebrief || debriefPromptPending) && !debriefPromptDismissed && (active === 0 || paused) && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="border border-wraith-border rounded bg-wraith-bg p-5 max-w-md w-full">
-            <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">
+            <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-2">
               {battleDebrief ? 'Battle Complete' : 'Ending Simulation'}
             </div>
             <h2 className="text-xl text-slate-100 mb-3">View the AI debrief?</h2>
@@ -739,7 +739,7 @@ function InstructionBlock({ title, items, variant = 'definitions' }: {
 }) {
   return (
     <div className="border border-wraith-border rounded p-3">
-      <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
+      <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
       <div className="space-y-1.5">
         {items.map(item => (
           <div key={`${item.label || ''}-${item.detail}`} className={`leading-5 text-slate-300 ${
@@ -778,7 +778,7 @@ function DebriefContent({ text, loading = false }: { text: string | null; loadin
   if (loading) {
     return (
       <div className="border border-wraith-border rounded p-5 bg-wraith-panel/20">
-        <div className="text-xs uppercase tracking-widest text-slate-500 mb-3">Generating Debrief</div>
+        <div className="font-mono text-xs uppercase tracking-widest text-slate-500 mb-3">Generating Debrief</div>
         <div className="space-y-3">
           <div className="h-3 w-2/3 rounded bg-slate-700/60 animate-pulse" />
           <div className="h-3 w-full rounded bg-slate-800/70 animate-pulse" />

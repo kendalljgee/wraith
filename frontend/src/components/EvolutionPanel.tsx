@@ -27,23 +27,23 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="text-xs text-slate-500 uppercase tracking-widest">
+          <div className="font-mono text-xs text-slate-500 uppercase tracking-widest">
             Evolution Engine
           </div>
-          <div className="text-sm text-slate-200 mt-0.5">
+          <div className="font-mono text-sm text-slate-200 mt-0.5">
             Gen {generations.length}
             <span className="text-slate-500 text-xs ml-2">
               attacker pressure {bestPercent}%
             </span>
           </div>
         </div>
-        <div className="text-xs text-slate-600 uppercase tracking-widest">
+        <div className="font-mono text-xs text-slate-600 uppercase tracking-widest">
           {challengeActive ? 'Awaiting Assets' : generations.length === 0 ? 'Initializing...' : evolutionComplete ? 'Complete' : 'Running'}
         </div>
       </div>
 
       <div className="mb-3 border border-wraith-border rounded p-2 min-w-0 overflow-hidden">
-        <div className="text-xs text-slate-500 uppercase tracking-widest mb-1">
+        <div className="font-mono text-xs text-slate-500 uppercase tracking-widest mb-1">
           LLM Reasoning
         </div>
         <div className="text-xs text-slate-300 whitespace-pre-wrap break-words">
@@ -66,7 +66,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
           </div>
         ) : (
           [...generations].reverse().map((gen, i) => (
-            <div key={gen.number} className={`text-xs py-1 ${i === 0 ? 'opacity-100' : 'opacity-60'}`}>
+            <div key={gen.number} className={`font-mono text-xs py-1 ${i === 0 ? 'opacity-100' : 'opacity-60'}`}>
               <div className="flex items-center gap-2">
               {/* Gen number */}
               <span className="text-slate-500 w-10 shrink-0">
@@ -125,7 +125,7 @@ export default function EvolutionPanel({ challengeActive = false }: EvolutionPan
       {generations.length > 0 && (() => {
         const best = [...generations].sort((a, b) => b.fitness - a.fitness)[0]
         return (
-          <div className="mt-3 pt-3 border-t border-wraith-border text-xs text-slate-500">
+          <div className="font-mono mt-3 pt-3 border-t border-wraith-border text-xs text-slate-500">
             <div className="uppercase tracking-widest mb-1">Best Strategy</div>
             <div className="space-y-0.5">
               <div>type: <span className="text-slate-300">{best.mutation}</span></div>
