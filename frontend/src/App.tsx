@@ -277,90 +277,46 @@ export default function App() {
               </div>
               <h1 className="text-6xl md:text-7xl font-semibold text-slate-50 tracking-normal">WRAITH</h1>
               <p className="text-2xl md:text-3xl text-slate-300 mt-4 max-w-4xl leading-tight">
-                Test how layered counter-drone assets perform against evolving attacker swarm tactics.
+                Test counter-UAS asset placement against adaptive attacker swarm behavior.
               </p>
             </div>
 
-            <div className="grid lg:grid-cols-[1.15fr_0.85fr] gap-5">
-              <div className="border border-wraith-border rounded p-5">
-                <div className="grid md:grid-cols-2 gap-4 text-sm">
-                  <InstructionBlock title="1. Build The Defense">
-                    Pick Jammer, Interceptor, or Spoofer. Hover over the map to preview its range, click to place it, then drag from the center dot to reposition. Use Remove, then click an asset center, to delete it.
-                  </InstructionBlock>
-                  <InstructionBlock title="2. Tune Asset Specs">
-                    Range is meters of coverage. Reload is seconds between interceptor shots. Effect is probability or EW reliability from 0 to 1. Latency is response delay metadata for imported assets.
-                  </InstructionBlock>
-                  <InstructionBlock title="3. Generate Terrain">
-                    Type natural-language terrain or a location. The backend generates tactical zones such as urban clutter, ridgelines, RF shadows, desert basins, and water approaches.
-                  </InstructionBlock>
-                  <InstructionBlock title="4. Run The Battle">
-                    Click Run Defense after placing assets. The attack ends when the swarm breaches the objective, times out, is destroyed, or all surviving drones are jammed/spoofed.
-                  </InstructionBlock>
-                </div>
-
-                <div className="mt-5 grid md:grid-cols-3 gap-3 text-xs">
-                  <VisualKey color="bg-amber-400" label="Jammer" detail="Severs comms inside range." />
-                  <VisualKey color="bg-red-400" label="Interceptor" detail="Destroys drones inside range." />
-                  <VisualKey color="bg-purple-400" label="Spoofer" detail="Redirects drone navigation." />
-                </div>
-
-                <div className="mt-5 border border-wraith-border rounded p-3">
-                  <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Sample Terrain Prompts</div>
-                  <div className="grid md:grid-cols-2 gap-2">
-                    {TERRAIN_PROMPTS.map(prompt => (
-                      <div key={prompt} className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-300">
-                        {prompt}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+            <div className="border border-wraith-border rounded p-5">
+              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                <InstructionBlock title="1. Build Defense">
+                  Pick Jammer, Interceptor, or Spoofer. Hover over the map to preview its range, click to place it, then drag from the center dot to reposition. Use Remove, then click an asset center, to delete it.
+                </InstructionBlock>
+                <InstructionBlock title="2. Tune Asset Specs">
+                  Range is meters of coverage. Reload is seconds between interceptor shots. Effect is probability or EW reliability from 0 to 1. Latency is response delay metadata for imported assets.
+                </InstructionBlock>
+                <InstructionBlock title="3. Generate Terrain">
+                  Type natural-language terrain or a location. The backend generates tactical zones such as urban clutter, ridgelines, RF shadows, desert basins, and water approaches.
+                </InstructionBlock>
+                <InstructionBlock title="4. Run Battle">
+                  Click Run Defense after placing assets. The attack ends when the swarm breaches the objective, times out, is destroyed, or all surviving drones are jammed/spoofed.
+                </InstructionBlock>
               </div>
 
-              <div className="border border-wraith-border rounded p-5">
-                <div className="h-56 rounded border border-wraith-border relative overflow-hidden bg-[#080c10]">
-                  <div className="absolute inset-0 opacity-70" style={{
-                    backgroundImage: 'linear-gradient(#203246 1px, transparent 1px), linear-gradient(90deg, #203246 1px, transparent 1px)',
-                    backgroundSize: '64px 48px',
-                  }} />
-                  <div className="absolute left-[18%] top-[28%] w-28 h-20 border border-slate-400/70 bg-slate-500/20" />
-                  <div className="absolute left-[58%] top-[50%] w-32 h-24 border border-slate-400/70 bg-slate-500/20" />
-                  <div className="absolute left-[10%] top-[60%] w-36 h-36 rounded-full border-2 border-amber-400/80" />
-                  <div className="absolute left-[56%] top-[18%] w-32 h-32 rounded-full border-2 border-purple-400/80" />
-                  <div className="absolute left-[34%] top-[36%] w-24 h-24 rounded-full border-2 border-red-400/80" />
-                  <div className="absolute left-[68%] top-[18%] text-red-400">▲</div>
-                  <div className="absolute left-[73%] top-[26%] text-amber-400">▲</div>
-                  <div className="absolute left-[64%] top-[35%] text-purple-400">▲</div>
-                  <div className="absolute left-[40%] top-[78%] text-red-500 text-2xl">⊕</div>
-                </div>
+              <div className="mt-5 grid md:grid-cols-3 gap-3 text-xs">
+                <VisualKey color="bg-amber-400" label="Jammer" detail="Severs comms inside range." />
+                <VisualKey color="bg-red-400" label="Interceptor" detail="Destroys drones inside range." />
+                <VisualKey color="bg-purple-400" label="Spoofer" detail="Redirects drone navigation." />
+              </div>
 
-                <div className="mt-4">
-                  <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Imported Assets</div>
-                  {customSpecs.length > 0 ? (
-                    <div className="space-y-2 max-h-56 overflow-y-auto">
-                      {customSpecs.map(spec => (
-                        <div key={spec.id} className="border border-wraith-border rounded px-3 py-2 text-xs flex items-center justify-between gap-3">
-                          <span className="text-slate-200">{spec.name}</span>
-                          <span className="text-slate-500">{spec.type} · {spec.radius}m</span>
-                        </div>
-                      ))}
+              <div className="mt-5 border border-wraith-border rounded p-3">
+                <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Sample Terrain Prompts</div>
+                <div className="grid md:grid-cols-2 gap-2">
+                  {TERRAIN_PROMPTS.map(prompt => (
+                    <div key={prompt} className="text-xs border border-wraith-border rounded px-2 py-1 text-slate-300">
+                      {prompt}
                     </div>
-                  ) : (
-                    <div className="text-xs text-slate-600 border border-wraith-border rounded px-3 py-3">
-                      No custom asset specs imported yet.
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
 
-            <div className="mt-7 flex items-center justify-center gap-3">
-              <button
-                onClick={() => void startSimulation()}
-                className="text-sm bg-threat-low text-wraith-bg border border-threat-low rounded px-5 py-2 hover:bg-slate-100 hover:border-slate-100 transition-colors"
-              >
-                Start Simulation
-              </button>
-              <div className="flex items-center gap-2">
+            <div className="mt-5 grid md:grid-cols-[minmax(240px,0.45fr)_1fr] gap-5 items-stretch">
+              <div className="border border-wraith-border rounded p-4 flex items-center justify-between gap-3">
                 <label className="text-sm border border-wraith-border rounded px-5 py-2 text-slate-300 hover:text-slate-100 hover:border-slate-500 transition-colors cursor-pointer">
                   Import Custom Specs
                   <input
@@ -380,6 +336,33 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              <div className="border border-wraith-border rounded p-4">
+                <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Imported Assets</div>
+                {customSpecs.length > 0 ? (
+                  <div className="grid md:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                    {customSpecs.map(spec => (
+                      <div key={spec.id} className="border border-wraith-border rounded px-3 py-2 text-xs flex items-center justify-between gap-3">
+                        <span className="text-slate-200">{spec.name}</span>
+                        <span className="text-slate-500">{spec.type} · {spec.radius}m</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-600 border border-wraith-border rounded px-3 py-3">
+                    No custom asset specs imported yet.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-7 flex justify-center">
+              <button
+                onClick={() => void startSimulation()}
+                className="text-sm bg-threat-low text-wraith-bg border border-threat-low rounded px-5 py-2 hover:bg-slate-100 hover:border-slate-100 transition-colors"
+              >
+                Start Simulation
+              </button>
             </div>
           </section>
         </main>
