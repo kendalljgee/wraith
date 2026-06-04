@@ -9,10 +9,10 @@ const SESSION_ID = 'dev-session-001'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 const TERRAIN_PROMPTS = [
-  'dense coastal city with a river corridor',
+  'terrain like Kabul, Afghanistan',
+  'terrain like Kyiv, Ukraine',
   'mountain valley with RF shadow zones',
   'open desert basin with low-rise urban grid',
-  'industrial port with water approaches',
 ]
 
 const ASSET_TOOLS: Array<{
@@ -303,18 +303,19 @@ export default function App() {
                 />
                 <InstructionBlock
                   title="3. Generate Terrain"
+                  variant="bullets"
                   items={[
                     { label: 'Prompt', detail: 'type a terrain description or location.' },
-                    { label: 'Output', detail: 'tactical zones on the simulation map.' },
-                    { label: 'Examples', detail: 'urban clutter, ridgelines, RF shadows, desert basins, water approaches.' },
+                    { label: 'Output', detail: 'WRAITH creates tactical terrain zones on the simulation map.' },
                   ]}
                 />
                 <InstructionBlock
                   title="4. Run Battle"
+                  variant="bullets"
                   items={[
                     { label: 'Start', detail: 'click Run Defense after placing assets.' },
-                    { label: 'Watch', detail: 'attacker swarm adapts across generations.' },
-                    { label: 'Ends when', detail: 'breach, timeout, destroyed swarm, or all surviving drones jammed/spoofed.' },
+                    { label: 'Watch', detail: 'the attacker swarm adapts across generations.' },
+                    { label: 'Battle ends', detail: 'on breach, timeout, swarm destruction, or full jamming/spoofing.' },
                   ]}
                 />
               </div>
@@ -736,19 +737,25 @@ export default function App() {
   )
 }
 
-function InstructionBlock({ title, items }: {
+function InstructionBlock({ title, items, variant = 'definitions' }: {
   title: string
   items: Array<{ label: string; detail: string }>
+  variant?: 'definitions' | 'bullets'
 }) {
   return (
     <div className="border border-wraith-border rounded p-3">
       <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
       <div className="space-y-1.5">
         {items.map(item => (
-          <div key={item.label} className="flex gap-2 leading-5 text-slate-300">
-            <span className="text-slate-100 font-semibold shrink-0">{item.label}</span>
-            <span className="text-slate-500 shrink-0">=</span>
-            <span>{item.detail}</span>
+          <div key={item.label} className={`leading-5 text-slate-300 ${
+            variant === 'bullets' ? 'flex gap-2' : 'flex gap-2'
+          }`}>
+            {variant === 'bullets' && <span className="text-slate-500">•</span>}
+            <span>
+              <span className="text-slate-100 font-semibold">{item.label}</span>
+              <span className="text-slate-500">: </span>
+              {item.detail}
+            </span>
           </div>
         ))}
       </div>
