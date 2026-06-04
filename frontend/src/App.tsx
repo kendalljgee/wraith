@@ -305,17 +305,17 @@ export default function App() {
                   title="3. Generate Terrain"
                   variant="bullets"
                   items={[
-                    { label: 'Prompt', detail: 'type a terrain description or location.' },
-                    { label: 'Output', detail: 'WRAITH creates tactical terrain zones on the simulation map.' },
+                    { detail: 'Enter a terrain description or location.' },
+                    { detail: 'WRAITH creates tactical terrain zones on the simulation map.' },
                   ]}
                 />
                 <InstructionBlock
                   title="4. Run Battle"
                   variant="bullets"
                   items={[
-                    { label: 'Start', detail: 'click Run Defense after placing assets.' },
-                    { label: 'Watch', detail: 'the attacker swarm adapts across generations.' },
-                    { label: 'Battle ends', detail: 'on breach, timeout, swarm destruction, or full jamming/spoofing.' },
+                    { detail: 'To start the simulation, click Run Defense after placing assets.' },
+                    { detail: 'The attacker swarm adapts across generations.' },
+                    { detail: 'The simulation ends on breach, timeout, swarm destruction, or full jamming/spoofing.' },
                   ]}
                 />
               </div>
@@ -734,7 +734,7 @@ export default function App() {
 
 function InstructionBlock({ title, items, variant = 'definitions' }: {
   title: string
-  items: Array<{ label: string; detail: string }>
+  items: Array<{ label?: string; detail: string }>
   variant?: 'definitions' | 'bullets'
 }) {
   return (
@@ -742,7 +742,7 @@ function InstructionBlock({ title, items, variant = 'definitions' }: {
       <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
       <div className="space-y-1.5">
         {items.map(item => (
-          <div key={item.label} className={`leading-5 text-slate-300 ${
+          <div key={`${item.label || ''}-${item.detail}`} className={`leading-5 text-slate-300 ${
             variant === 'bullets' ? 'flex gap-2' : 'flex gap-2'
           }`}>
             {variant === 'bullets' && <span className="text-slate-500">•</span>}
