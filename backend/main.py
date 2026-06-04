@@ -5,6 +5,7 @@ from swarm import DefenseAsset, HEIGHT, TerrainZone, WIDTH, make_battle, tick, s
 from tournament import tournament
 from ai_client import complete, complete_system
 import asyncio
+import hashlib
 import json
 import re
 from dotenv import load_dotenv
@@ -314,24 +315,52 @@ async def terrain_from_description(description: str) -> list[TerrainZone]:
 
 
 async def generate_terrain_with_llm(description: str) -> list[TerrainZone]:
+    system_prompt = (
+        "You generate compact battlefield terrain overlays for an 800m by 600m top-down canvas. "
+        "Return JSON only with a top-level zones array. Create 3-5 zones that match the requested "
+        "terrain type or location. If the request names a real place, infer plausible high-level terrain "
+        "features from general geographic context rather than returning a generic mask. Never use generic "
+        "labels like 'Generated terrain area' or a single 'Terrain mask' rectangle. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
+        "Each zone needs id, x, y, width, height, type, label. Coordinates are meters from the top-left, "
+        "x 0-800, y 0-600. Keep labels short and tactical. Do not use markdown."
+    )
     result = await complete_system(
-        system=(
-            "You generate compact battlefield terrain overlays for an 800m by 600m top-down canvas. "
-            "Return JSON only with a top-level zones array. Create 2-5 zones that match the requested "
-            "terrain type or location. If the request names a real place, infer plausible high-level terrain "
-            "features from general geographic context rather than returning a generic mask. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
-            "Each zone needs id, x, y, width, height, type, label. Coordinates are meters from the top-left, "
-            "x 0-800, y 0-600. Keep labels short and tactical. Do not use markdown."
-        ),
+        system=system_prompt,
         user=f"Terrain request: {description}",
         model_key="fast",
         max_tokens=700,
     )
+    valid_zones = parse_llm_terrain_response(description, result)
+    if valid_zones:
+        return valid_zones
+
+    print("Terrain LLM returned generic response, retrying with stricter analyst prompt")
+    retry_result = await complete_system(
+        system=(
+            f"{system_prompt} The previous response was rejected as too generic. "
+            "Use the named location or terrain phrase to choose distinct zone names, terrain types, "
+            "sizes, and coordinates. The output should be materially different from a generic city template."
+        ),
+        user=f"Terrain request: {description}",
+        model_key="analyst",
+        max_tokens=700,
+    )
+    retry_zones = parse_llm_terrain_response(description, retry_result)
+    if retry_zones:
+        return retry_zones
+
+    return procedural_terrain_from_description(description)
+
+
+def parse_llm_terrain_response(description: str, result: str) -> list[TerrainZone]:
     clean = extract_json_payload(result)
     data = json.loads(clean)
     zones = data.get("zones", data if isinstance(data, list) else [])
     parsed = [coerce_terrain_zone(zone, index) for index, zone in enumerate(zones[:5])]
-    return [zone for zone in parsed if zone is not None] or procedural_terrain_from_description(description)
+    valid_zones = [zone for zone in parsed if zone is not None]
+    if is_generic_terrain_response(description, valid_zones):
+        return []
+    return valid_zones
 
 
 def extract_json_payload(text: str) -> str:
@@ -374,6 +403,27 @@ def coerce_terrain_zone(zone: dict, index: int) -> TerrainZone | None:
     return TerrainZone(zone_id, x, y, width, height, terrain_type, label)
 
 
+def is_generic_terrain_response(description: str, zones: list[TerrainZone]) -> bool:
+    if not zones:
+        return True
+
+    generic_labels = {
+        "generated terrain area",
+        "generated terrain",
+        "terrain area",
+        "terrain mask",
+        "mask",
+    }
+    labels = {zone.label.strip().lower() for zone in zones}
+    if labels & generic_labels:
+        return True
+
+    if looks_like_location_prompt(description.lower()):
+        return len(zones) < 2
+
+    return False
+
+
 def procedural_terrain_from_description(description: str) -> list[TerrainZone]:
     text = description.lower()
     zones: list[TerrainZone] = []
@@ -403,6 +453,34 @@ def procedural_terrain_from_description(description: str) -> list[TerrainZone]:
 
 
 def looks_like_location_prompt(text: str) -> bool:
+    location_label = normalize_location_label(text)
+    locationish_terms = re.findall(r"[a-z][a-z'-]+", location_label.lower())
+    generic_terrain_terms = {
+        "terrain",
+        "mountain",
+        "mountainous",
+        "ridge",
+        "valley",
+        "hills",
+        "alpine",
+        "ocean",
+        "oceanic",
+        "maritime",
+        "sea",
+        "coastal",
+        "island",
+        "desert",
+        "arid",
+        "sand",
+        "dry",
+        "urban",
+        "dense",
+        "buildings",
+        "downtown",
+        "rf",
+        "shadow",
+        "canyon",
+    }
     return (
         "," in text
         or "terrain like" in text
@@ -410,18 +488,38 @@ def looks_like_location_prompt(text: str) -> bool:
         or "city like" in text
         or "near " in text
         or "around " in text
+        or (0 < len(locationish_terms) <= 4 and not set(locationish_terms) & generic_terrain_terms)
     )
 
 
 def procedural_location_terrain(description: str) -> list[TerrainZone]:
     location = normalize_location_label(description)
+    seed = location.lower()
+    core_x = seeded_range(seed, "core_x", 110.0, 300.0)
+    core_y = seeded_range(seed, "core_y", 90.0, 210.0)
+    core_w = seeded_range(seed, "core_w", 190.0, 285.0)
+    core_h = seeded_range(seed, "core_h", 135.0, 215.0)
+    district_x = seeded_range(seed, "district_x", 405.0, 565.0)
+    district_y = seeded_range(seed, "district_y", 145.0, 310.0)
+    ridge_y = seeded_range(seed, "ridge_y", 330.0, 455.0)
+    shadow_x = seeded_range(seed, "shadow_x", 430.0, 610.0)
+    shadow_y = seeded_range(seed, "shadow_y", 330.0, 460.0)
+    approach_x = seeded_range(seed, "approach_x", 70.0, 245.0)
+    approach_y = seeded_range(seed, "approach_y", 285.0, 430.0)
+
     return [
-        TerrainZone("location_urban_core", 175.0, 125.0, 250.0, 175.0, "urban", f"{location} core"),
-        TerrainZone("location_residential", 470.0, 195.0, 210.0, 165.0, "urban", "Dense blocks"),
-        TerrainZone("location_ridge_mask", 90.0, 390.0, 620.0, 58.0, "ridge", "Terrain mask"),
-        TerrainZone("location_rf_shadow", 520.0, 385.0, 155.0, 145.0, "rf_shadow", "RF shadow"),
-        TerrainZone("location_approach", 120.0, 315.0, 265.0, 95.0, "desert", "Open approach"),
+        TerrainZone("location_urban_core", core_x, core_y, core_w, core_h, "urban", f"{location} core"),
+        TerrainZone("location_built_up", district_x, district_y, seeded_range(seed, "district_w", 150.0, 245.0), seeded_range(seed, "district_h", 105.0, 190.0), "urban", "Built-up district"),
+        TerrainZone("location_ridge_mask", seeded_range(seed, "ridge_x", 45.0, 130.0), ridge_y, seeded_range(seed, "ridge_w", 505.0, 690.0), seeded_range(seed, "ridge_h", 42.0, 86.0), "ridge", "Ridgeline mask"),
+        TerrainZone("location_rf_shadow", shadow_x, shadow_y, seeded_range(seed, "shadow_w", 110.0, 190.0), seeded_range(seed, "shadow_h", 95.0, 175.0), "rf_shadow", "RF shadow"),
+        TerrainZone("location_approach", approach_x, approach_y, seeded_range(seed, "approach_w", 190.0, 310.0), seeded_range(seed, "approach_h", 70.0, 130.0), "desert", "Open approach"),
     ]
+
+
+def seeded_range(seed: str, key: str, minimum: float, maximum: float) -> float:
+    digest = hashlib.sha256(f"{seed}:{key}".encode("utf-8")).hexdigest()
+    unit = int(digest[:8], 16) / 0xFFFFFFFF
+    return round(minimum + (maximum - minimum) * unit, 1)
 
 
 def normalize_location_label(description: str) -> str:
