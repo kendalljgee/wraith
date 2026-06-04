@@ -295,10 +295,10 @@ export default function App() {
                 <InstructionBlock
                   title="2. Tune Asset Specs"
                   items={[
-                    { label: 'Range', detail: 'meters of coverage.' },
-                    { label: 'Reload', detail: 'seconds between interceptor shots.' },
-                    { label: 'Effect', detail: 'probability or EW reliability from 0 to 1.' },
-                    { label: 'Latency', detail: 'response delay metadata for imported assets.' },
+                    { label: 'Range', detail: 'Meters of coverage.' },
+                    { label: 'Reload', detail: 'Seconds between interceptor shots.' },
+                    { label: 'Effect', detail: 'Probability or EW reliability from 0 to 1.' },
+                    { label: 'Latency', detail: 'Response delay metadata for imported assets.' },
                   ]}
                 />
                 <InstructionBlock
