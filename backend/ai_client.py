@@ -15,10 +15,39 @@ HEADERS = {
 }
 
 MODELS = {
-    "analyst":   "anthropic/claude-sonnet-4-5",
-    "fast":      "google/gemini-2.0-flash-001",
-    "optimizer": "mistralai/mistral-7b-instruct",
+    "analyst": ["anthropic/claude-sonnet-4-5"],
+    "fast": [
+        "google/gemini-2.5-flash",
+        "openai/gpt-4o-mini",
+        "anthropic/claude-sonnet-4-5",
+    ],
+    "optimizer": ["mistralai/mistral-7b-instruct"],
 }
+
+
+def models_for_key(model_key: str) -> list[str]:
+    models = MODELS[model_key]
+    return models if isinstance(models, list) else [models]
+
+
+async def post_chat_completion(payload: dict, model_key: str) -> str:
+    last_error = None
+
+    async with aiohttp.ClientSession() as session:
+        for model in models_for_key(model_key):
+            payload = {**payload, "model": model}
+            async with session.post(BASE_URL, headers=HEADERS, json=payload) as resp:
+                data = await resp.json()
+                print(f"[LLM] status: {resp.status}, model: {model}")
+                if "error" in data:
+                    last_error = data["error"]
+                    print(f"[LLM] error from API: {last_error}")
+                    continue
+                content = data["choices"][0]["message"]["content"]
+                print(f"[LLM] raw: {content[:200]}")
+                return content
+
+    raise ValueError(last_error or f"No models available for key: {model_key}")
 
 async def complete(
     prompt: str,
@@ -29,23 +58,12 @@ async def complete(
     if not OPENROUTER_API_KEY:
         raise ValueError("OPENROUTER_API_KEY is not set")
 
-    model = MODELS[model_key]
     payload = {
-        "model": model,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}]
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(BASE_URL, headers=HEADERS, json=payload) as resp:
-            data = await resp.json()
-            print(f"[LLM] status: {resp.status}, model: {model}")
-            if "error" in data:
-                print(f"[LLM] error from API: {data['error']}")
-                raise ValueError(data["error"])
-            content = data["choices"][0]["message"]["content"]
-            print(f"[LLM] raw: {content[:200]}")
-            return content
+    return await post_chat_completion(payload, model_key)
 
 async def complete_system(
     system: str,
@@ -56,9 +74,7 @@ async def complete_system(
     if not OPENROUTER_API_KEY:
         raise ValueError("OPENROUTER_API_KEY is not set")
 
-    model = MODELS[model_key]
     payload = {
-        "model": model,
         "max_tokens": max_tokens,
         "messages": [
             {"role": "system", "content": system},
@@ -66,9 +82,4 @@ async def complete_system(
         ]
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(BASE_URL, headers=HEADERS, json=payload) as resp:
-            data = await resp.json()
-            if "error" in data:
-                raise ValueError(data["error"])
-            return data["choices"][0]["message"]["content"]
+    return await post_chat_completion(payload, model_key)

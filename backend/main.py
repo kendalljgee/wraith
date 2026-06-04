@@ -36,10 +36,7 @@ async def llm_mutation_callback(best_strategy) -> dict:
         model_key="analyst",
         max_tokens=200,
     )
-    clean = result.strip()
-    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", clean, re.DOTALL)
-    if fence_match:
-        clean = fence_match.group(1).strip()
+    clean = extract_json_payload(result)
     return json.loads(clean)
 
 # ── broadcast helper ───────────────────────────────────────
@@ -321,7 +318,8 @@ async def generate_terrain_with_llm(description: str) -> list[TerrainZone]:
         system=(
             "You generate compact battlefield terrain overlays for an 800m by 600m top-down canvas. "
             "Return JSON only with a top-level zones array. Create 2-5 zones that match the requested "
-            "terrain type or location. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
+            "terrain type or location. If the request names a real place, infer plausible high-level terrain "
+            "features from general geographic context rather than returning a generic mask. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
             "Each zone needs id, x, y, width, height, type, label. Coordinates are meters from the top-left, "
             "x 0-800, y 0-600. Keep labels short and tactical. Do not use markdown."
         ),
@@ -329,14 +327,33 @@ async def generate_terrain_with_llm(description: str) -> list[TerrainZone]:
         model_key="fast",
         max_tokens=700,
     )
-    clean = result.strip()
-    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", clean, re.DOTALL)
-    if fence_match:
-        clean = fence_match.group(1).strip()
+    clean = extract_json_payload(result)
     data = json.loads(clean)
     zones = data.get("zones", data if isinstance(data, list) else [])
     parsed = [coerce_terrain_zone(zone, index) for index, zone in enumerate(zones[:5])]
     return [zone for zone in parsed if zone is not None] or procedural_terrain_from_description(description)
+
+
+def extract_json_payload(text: str) -> str:
+    clean = text.strip()
+    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", clean, re.DOTALL)
+    if fence_match:
+        clean = fence_match.group(1).strip()
+
+    if clean.startswith("{") or clean.startswith("["):
+        return clean
+
+    object_start = clean.find("{")
+    object_end = clean.rfind("}")
+    if object_start != -1 and object_end > object_start:
+        return clean[object_start:object_end + 1]
+
+    array_start = clean.find("[")
+    array_end = clean.rfind("]")
+    if array_start != -1 and array_end > array_start:
+        return clean[array_start:array_end + 1]
+
+    return clean
 
 
 def coerce_terrain_zone(zone: dict, index: int) -> TerrainZone | None:
@@ -375,9 +392,47 @@ def procedural_terrain_from_description(description: str) -> list[TerrainZone]:
     if any(word in text for word in ["rf", "jam", "shadow", "dead zone", "canyon"]):
         zones.append(TerrainZone("generated_rf_shadow", 470.0, 140.0, 180.0, 230.0, "rf_shadow", "RF shadow"))
 
+    if not zones and looks_like_location_prompt(text):
+        return procedural_location_terrain(description)
+
     return zones or [
-        TerrainZone("generated_mixed", 150.0, 145.0, 500.0, 330.0, "desert", "Generated terrain area"),
+        TerrainZone("generated_urban_core", 220.0, 155.0, 240.0, 180.0, "urban", "Built-up terrain"),
+        TerrainZone("generated_approach", 455.0, 205.0, 250.0, 120.0, "desert", "Open approach"),
+        TerrainZone("generated_rf_shadow", 525.0, 345.0, 150.0, 165.0, "rf_shadow", "RF shadow"),
     ]
+
+
+def looks_like_location_prompt(text: str) -> bool:
+    return (
+        "," in text
+        or "terrain like" in text
+        or "location like" in text
+        or "city like" in text
+        or "near " in text
+        or "around " in text
+    )
+
+
+def procedural_location_terrain(description: str) -> list[TerrainZone]:
+    location = normalize_location_label(description)
+    return [
+        TerrainZone("location_urban_core", 175.0, 125.0, 250.0, 175.0, "urban", f"{location} core"),
+        TerrainZone("location_residential", 470.0, 195.0, 210.0, 165.0, "urban", "Dense blocks"),
+        TerrainZone("location_ridge_mask", 90.0, 390.0, 620.0, 58.0, "ridge", "Terrain mask"),
+        TerrainZone("location_rf_shadow", 520.0, 385.0, 155.0, 145.0, "rf_shadow", "RF shadow"),
+        TerrainZone("location_approach", 120.0, 315.0, 265.0, 95.0, "desert", "Open approach"),
+    ]
+
+
+def normalize_location_label(description: str) -> str:
+    label = re.sub(
+        r"\b(terrain|location|city|like|near|around|similar to)\b",
+        "",
+        description,
+        flags=re.IGNORECASE,
+    )
+    label = re.sub(r"\s+", " ", label.replace(",", " ")).strip()
+    return (label or "Location")[:18].title()
 
 
 def make_manual_asset(payload: dict) -> DefenseAsset | None:
