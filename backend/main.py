@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 tournament_task: asyncio.Task | None = None
 simulation_speed: float = 1.0
+terrain_cache: dict[str, list[TerrainZone]] = {}
 
 # ── LLM mutation callback ──────────────────────────────────
 
@@ -306,34 +307,72 @@ def payload_radius(payload: dict, asset_type: str) -> float:
 
 
 async def terrain_from_description(description: str) -> list[TerrainZone]:
+    cache_key = normalize_terrain_prompt(description)
     try:
-        return await generate_terrain_with_llm(description)
+        zones = await generate_terrain_with_llm(description)
+        terrain_cache[cache_key] = clone_terrain_zones(zones)
+        print(f"[Terrain] source=llm prompt={description!r} zones={len(zones)}")
+        return zones
     except Exception as e:
-        print(f"Terrain generation failed, using fallback: {e}")
-        return procedural_terrain_from_description(description)
+        print(f"[Terrain] generation failed for {description!r}: {e}")
+        if cache_key in terrain_cache:
+            cached = clone_terrain_zones(terrain_cache[cache_key])
+            print(f"[Terrain] source=cache prompt={description!r} zones={len(cached)}")
+            return cached
+        fallback = procedural_terrain_from_description(description)
+        print(f"[Terrain] source=procedural prompt={description!r} zones={len(fallback)} labels={[zone.label for zone in fallback]}")
+        return fallback
 
 
 async def generate_terrain_with_llm(description: str) -> list[TerrainZone]:
-    result = await complete_system(
-        system=(
-            "You generate compact battlefield terrain overlays for an 800m by 600m top-down canvas. "
-            "Return JSON only with a top-level zones array. Create 2-5 zones that match the requested "
-            "terrain type or location. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
-            "Each zone needs id, x, y, width, height, type, label. Coordinates are meters from the top-left, "
-            "x 0-800, y 0-600. Keep labels short and tactical. Do not use markdown."
-        ),
-        user=f"Terrain request: {description}",
-        model_key="fast",
-        max_tokens=700,
-    )
-    clean = result.strip()
-    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", clean, re.DOTALL)
-    if fence_match:
-        clean = fence_match.group(1).strip()
+    last_error: Exception | None = None
+    for attempt in range(1, 3):
+        try:
+            result = await complete_system(
+                system=(
+                    "You generate compact battlefield terrain overlays for an 800m by 600m top-down canvas. "
+                    "Return JSON only with a top-level zones array. Create 2-5 zones that match the requested "
+                    "terrain type or location. Valid terrain types are urban, ridge, rf_shadow, desert, water. "
+                    "Each zone needs id, x, y, width, height, type, label. Coordinates are meters from the top-left, "
+                    "x 0-800, y 0-600. Keep labels short and tactical. Do not use markdown."
+                ),
+                user=f"Terrain request: {description}",
+                model_key="fast",
+                max_tokens=700,
+            )
+            zones = parse_terrain_llm_result(description, result)
+            if zones:
+                print(f"[Terrain] attempt={attempt} accepted prompt={description!r} labels={[zone.label for zone in zones]}")
+                return zones
+            last_error = ValueError("LLM returned no valid terrain zones")
+        except Exception as e:
+            last_error = e
+            print(f"[Terrain] attempt={attempt} rejected prompt={description!r}: {e}")
+    raise last_error or ValueError("Terrain LLM failed")
+
+
+def parse_terrain_llm_result(description: str, result: str) -> list[TerrainZone]:
+    clean = extract_json_payload(result)
     data = json.loads(clean)
     zones = data.get("zones", data if isinstance(data, list) else [])
     parsed = [coerce_terrain_zone(zone, index) for index, zone in enumerate(zones[:5])]
-    return [zone for zone in parsed if zone is not None] or procedural_terrain_from_description(description)
+    valid_zones = [zone for zone in parsed if zone is not None]
+    print(
+        f"[Terrain] prompt={description!r} llm_zones={len(zones) if isinstance(zones, list) else 'invalid'} "
+        f"valid_zones={len(valid_zones)} labels={[zone.label for zone in valid_zones]}"
+    )
+    return valid_zones
+
+
+def normalize_terrain_prompt(description: str) -> str:
+    return re.sub(r"\s+", " ", description.strip().lower())
+
+
+def clone_terrain_zones(zones: list[TerrainZone]) -> list[TerrainZone]:
+    return [
+        TerrainZone(zone.id, zone.x, zone.y, zone.width, zone.height, zone.terrain_type, zone.label)
+        for zone in zones
+    ]
 
 
 def extract_json_payload(text: str) -> str:
@@ -361,7 +400,7 @@ def extract_json_payload(text: str) -> str:
 def coerce_terrain_zone(zone: dict, index: int) -> TerrainZone | None:
     if not isinstance(zone, dict):
         return None
-    terrain_type = zone.get("type")
+    terrain_type = zone.get("type") or zone.get("terrain_type")
     if terrain_type not in {"urban", "ridge", "rf_shadow", "desert", "water"}:
         return None
     try:
