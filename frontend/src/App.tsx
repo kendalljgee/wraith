@@ -283,18 +283,40 @@ export default function App() {
 
             <div className="border border-wraith-border rounded p-5">
               <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <InstructionBlock title="1. Build Defense">
-                  Pick Jammer, Interceptor, or Spoofer. Hover over the map to preview its range, click to place it, then drag from the center dot to reposition. Use Remove, then click an asset center, to delete it.
-                </InstructionBlock>
-                <InstructionBlock title="2. Tune Asset Specs">
-                  Range is meters of coverage. Reload is seconds between interceptor shots. Effect is probability or EW reliability from 0 to 1. Latency is response delay metadata for imported assets.
-                </InstructionBlock>
-                <InstructionBlock title="3. Generate Terrain">
-                  Type natural-language terrain or a location. The backend generates tactical zones such as urban clutter, ridgelines, RF shadows, desert basins, and water approaches.
-                </InstructionBlock>
-                <InstructionBlock title="4. Run Battle">
-                  Click Run Defense after placing assets. The attack ends when the swarm breaches the objective, times out, is destroyed, or all surviving drones are jammed/spoofed.
-                </InstructionBlock>
+                <InstructionBlock
+                  title="1. Build Defense"
+                  items={[
+                    { label: 'Select', detail: 'Jammer, Interceptor, or Spoofer.' },
+                    { label: 'Place', detail: 'Hover to preview range. Click map to add.' },
+                    { label: 'Move', detail: 'Drag from the center dot.' },
+                    { label: 'Remove', detail: 'Enable Remove, then click an asset center.' },
+                  ]}
+                />
+                <InstructionBlock
+                  title="2. Tune Asset Specs"
+                  items={[
+                    { label: 'Range', detail: 'meters of coverage.' },
+                    { label: 'Reload', detail: 'seconds between interceptor shots.' },
+                    { label: 'Effect', detail: 'probability or EW reliability from 0 to 1.' },
+                    { label: 'Latency', detail: 'response delay metadata for imported assets.' },
+                  ]}
+                />
+                <InstructionBlock
+                  title="3. Generate Terrain"
+                  items={[
+                    { label: 'Prompt', detail: 'type a terrain description or location.' },
+                    { label: 'Output', detail: 'tactical zones on the simulation map.' },
+                    { label: 'Examples', detail: 'urban clutter, ridgelines, RF shadows, desert basins, water approaches.' },
+                  ]}
+                />
+                <InstructionBlock
+                  title="4. Run Battle"
+                  items={[
+                    { label: 'Start', detail: 'click Run Defense after placing assets.' },
+                    { label: 'Watch', detail: 'attacker swarm adapts across generations.' },
+                    { label: 'Ends when', detail: 'breach, timeout, destroyed swarm, or all surviving drones jammed/spoofed.' },
+                  ]}
+                />
               </div>
 
               <div className="mt-5 grid md:grid-cols-3 gap-3 text-xs">
@@ -316,7 +338,7 @@ export default function App() {
             </div>
 
             <div className="mt-5 grid md:grid-cols-[minmax(240px,0.45fr)_1fr] gap-5 items-stretch">
-              <div className="border border-wraith-border rounded p-4 flex items-center justify-between gap-3">
+              <div className="border border-wraith-border rounded p-4 flex items-center justify-center gap-3">
                 <label className="text-sm border border-wraith-border rounded px-5 py-2 text-slate-300 hover:text-slate-100 hover:border-slate-500 transition-colors cursor-pointer">
                   Import Custom Specs
                   <input
@@ -714,11 +736,22 @@ export default function App() {
   )
 }
 
-function InstructionBlock({ title, children }: { title: string; children: string }) {
+function InstructionBlock({ title, items }: {
+  title: string
+  items: Array<{ label: string; detail: string }>
+}) {
   return (
     <div className="border border-wraith-border rounded p-3">
       <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
-      <p className="text-slate-300 leading-5">{children}</p>
+      <div className="space-y-1.5">
+        {items.map(item => (
+          <div key={item.label} className="flex gap-2 leading-5 text-slate-300">
+            <span className="text-slate-100 font-semibold shrink-0">{item.label}</span>
+            <span className="text-slate-500 shrink-0">=</span>
+            <span>{item.detail}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
